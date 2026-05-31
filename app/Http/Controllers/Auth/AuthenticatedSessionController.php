@@ -23,13 +23,13 @@ class AuthenticatedSessionController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $credentials = $request->validate([
-            'email' => ['required', 'email'],
+            'username' => ['required', 'string', 'max:255'],
             'password' => ['required', 'string'],
         ]);
 
         if (! Auth::attempt($credentials, $request->boolean('remember'))) {
             throw ValidationException::withMessages([
-                'email' => 'Email atau password tidak sesuai.',
+                'username' => 'Username atau password tidak sesuai.',
             ]);
         }
 
@@ -41,7 +41,7 @@ class AuthenticatedSessionController extends Controller
             $request->session()->regenerateToken();
 
             throw ValidationException::withMessages([
-                'email' => 'Akun ini sedang nonaktif.',
+                'username' => 'Akun ini sedang nonaktif.',
             ]);
         }
 

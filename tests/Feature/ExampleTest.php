@@ -4,8 +4,10 @@ namespace Tests\Feature;
 
 use App\Models\FileLog;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
@@ -26,18 +28,26 @@ class ExampleTest extends TestCase
             ->assertRedirect('/login');
     }
 
+    public function test_login_form_uses_username_instead_of_email(): void
+    {
+        $this->get('/login')
+            ->assertOk()
+            ->assertSee('Username')
+            ->assertDontSee('Email');
+    }
+
     public function test_login_redirects_by_role(): void
     {
         User::create([
             'name' => 'Owner',
-            'email' => 'owner@example.test',
+            'username' => 'owner',
             'password' => 'password',
             'role' => 'owner',
             'is_active' => true,
         ]);
 
         $this->post('/login', [
-            'email' => 'owner@example.test',
+            'username' => 'owner',
             'password' => 'password',
         ])->assertRedirect(route('owner.dashboard'));
     }
@@ -46,7 +56,7 @@ class ExampleTest extends TestCase
     {
         $staff = User::create([
             'name' => 'Staff',
-            'email' => 'staff@example.test',
+            'username' => 'staff',
             'password' => 'password',
             'role' => 'staff',
             'is_active' => true,
@@ -55,6 +65,35 @@ class ExampleTest extends TestCase
         $this->actingAs($staff)
             ->get('/owner/dashboard')
             ->assertForbidden();
+    }
+
+    public function test_authenticated_user_can_open_about_page(): void
+    {
+        $staff = $this->staffUser();
+
+        $this->actingAs($staff)
+            ->get(route('about'))
+            ->assertOk()
+            ->assertSee('Tentang Aplikasi')
+            ->assertSeeInOrder([
+                'Tentang Aplikasi Ini',
+                'Fitur Terkini',
+                'Alur Kerja Sistem',
+                'Teknologi Terkini',
+                'Spesifikasi Keamanan',
+                'Panduan Cepat',
+            ]);
+    }
+
+    public function test_owner_history_replaces_redundant_global_audit_page(): void
+    {
+        $owner = $this->ownerUser();
+
+        $this->actingAs($owner)
+            ->get(route('history'))
+            ->assertOk()
+            ->assertSee('Riwayat File Sistem')
+            ->assertDontSee('Audit Global');
     }
 
     public function test_staff_can_encrypt_file_and_record_file_repository_row(): void
@@ -88,12 +127,14 @@ class ExampleTest extends TestCase
         Storage::fake('local');
         $staff = $this->staffUser();
         $log = $this->encryptFileFor($staff, 'invoice.pdf', 'PDF content', 'secret123');
+        $log->forceFill(['created_at' => Carbon::parse('2026-05-31 16:51:00', 'UTC')])->saveQuietly();
 
         $this->actingAs($staff)
             ->get(route('files.show', $log))
             ->assertOk()
             ->assertSee('Detail File')
             ->assertSee('invoice.pdf')
+            ->assertSee('31 May 2026, 23:51')
             ->assertSee('Dekripsi & Download', false);
     }
 
@@ -157,7 +198,7 @@ class ExampleTest extends TestCase
         $staff = $this->staffUser();
         $owner = User::create([
             'name' => 'Owner',
-            'email' => 'owner@example.test',
+            'username' => 'owner',
             'password' => 'password',
             'role' => 'owner',
             'is_active' => true,
@@ -198,7 +239,7 @@ class ExampleTest extends TestCase
         $staff = $this->staffUser();
         $otherStaff = User::create([
             'name' => 'Other Staff',
-            'email' => 'other.staff@example.test',
+            'username' => 'other_staff',
             'password' => 'password',
             'role' => 'staff',
             'is_active' => true,
@@ -222,11 +263,42 @@ class ExampleTest extends TestCase
             ->assertSessionHasErrors('source_file');
     }
 
+    public function test_local_date_scope_uses_jakarta_day_boundaries(): void
+    {
+        $staff = $this->staffUser();
+
+        DB::table('file_logs')->insert([
+            [
+                'user_id' => $staff->id,
+                'file_name' => 'before-midnight.pdf',
+                'stored_path' => 'encrypted/before-midnight.enc',
+                'file_size' => 100,
+                'file_type' => 'pdf',
+                'created_at' => '2026-05-31 16:59:00',
+                'updated_at' => '2026-05-31 16:59:00',
+            ],
+            [
+                'user_id' => $staff->id,
+                'file_name' => 'after-midnight.pdf',
+                'stored_path' => 'encrypted/after-midnight.enc',
+                'file_size' => 100,
+                'file_type' => 'pdf',
+                'created_at' => '2026-05-31 17:00:00',
+                'updated_at' => '2026-05-31 17:00:00',
+            ],
+        ]);
+
+        $this->assertSame(
+            ['after-midnight.pdf'],
+            FileLog::createdDuringLocalDate('2026-06-01')->pluck('file_name')->all(),
+        );
+    }
+
     public function test_owner_can_create_staff_account(): void
     {
         $owner = User::create([
             'name' => 'Owner',
-            'email' => 'owner@example.test',
+            'username' => 'owner',
             'password' => 'password',
             'role' => 'owner',
             'is_active' => true,
@@ -235,14 +307,14 @@ class ExampleTest extends TestCase
         $this->actingAs($owner)
             ->post('/owner/users', [
                 'name' => 'New Staff',
-                'email' => 'new.staff@example.test',
+                'username' => 'new_staff',
                 'password' => 'password',
                 'is_active' => '1',
             ])
             ->assertSessionHas('status');
 
         $this->assertDatabaseHas('users', [
-            'email' => 'new.staff@example.test',
+            'username' => 'new_staff',
             'role' => 'staff',
             'is_active' => true,
         ]);
@@ -252,7 +324,7 @@ class ExampleTest extends TestCase
     {
         return User::create([
             'name' => 'Staff',
-            'email' => 'staff@example.test',
+            'username' => 'staff',
             'password' => 'password',
             'role' => 'staff',
             'is_active' => true,
@@ -263,7 +335,7 @@ class ExampleTest extends TestCase
     {
         return User::create([
             'name' => 'Owner',
-            'email' => 'owner@example.test',
+            'username' => 'owner',
             'password' => 'password',
             'role' => 'owner',
             'is_active' => true,

@@ -35,7 +35,7 @@
                 <h2 class="text-lg font-bold">Daftar File Terenkripsi</h2>
                 <p class="mt-1 text-sm text-zinc-600">Filter extension dan rentang tanggal berjalan dinamis saat dipilih.</p>
             </div>
-            <a href="{{ route('owner.audit') }}" class="secondary-button">Lihat Semua</a>
+            <a href="{{ route('history') }}" class="secondary-button">Lihat Semua</a>
         </div>
         <form method="GET" class="mt-4 grid gap-3 md:grid-cols-3" id="owner-filter-form">
             <select class="field-input mt-0" name="file_type" id="owner-file-type-filter">

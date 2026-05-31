@@ -3,7 +3,6 @@
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FileProcessController;
-use App\Http\Controllers\Owner\AuditLogController;
 use App\Http\Controllers\Owner\UserManagementController;
 use Illuminate\Support\Facades\Route;
 
@@ -23,6 +22,11 @@ Route::post('/logout', [AuthenticatedSessionController::class, 'destroy'])
     ->name('logout');
 
 Route::middleware('auth')->group(function () {
+    Route::view('/about', 'about', [
+        'pageTitle' => 'Tentang Aplikasi',
+        'pageDescription' => 'Ringkasan fungsi, alur kerja, dan keamanan aplikasi enkripsi file AES-128.',
+    ])->name('about');
+
     Route::get('/encrypt', [FileProcessController::class, 'createEncryption'])->name('files.encrypt');
     Route::post('/encrypt', [FileProcessController::class, 'storeEncryption'])->name('files.encrypt.store');
     Route::get('/file-logs/{fileLog}', [FileProcessController::class, 'show'])->name('files.show');
@@ -38,7 +42,6 @@ Route::middleware('auth')->group(function () {
 
     Route::middleware('role:owner')->prefix('owner')->name('owner.')->group(function () {
         Route::get('/dashboard', [DashboardController::class, 'owner'])->name('dashboard');
-        Route::get('/audit-logs', [AuditLogController::class, 'index'])->name('audit');
         Route::get('/users', [UserManagementController::class, 'index'])->name('users');
         Route::post('/users', [UserManagementController::class, 'store'])->name('users.store');
         Route::patch('/users/{user}', [UserManagementController::class, 'update'])->name('users.update');

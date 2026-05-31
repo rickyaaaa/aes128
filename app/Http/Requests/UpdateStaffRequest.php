@@ -16,7 +16,7 @@ class UpdateStaffRequest extends FormRequest
     {
         return [
             'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($this->route('user'))],
+            'username' => ['required', 'string', 'max:255', Rule::unique('users', 'username')->ignore($this->route('user'))],
             'password' => ['nullable', 'string', 'min:8', 'max:255'],
             'is_active' => ['required', Rule::in(['0', '1'])],
         ];

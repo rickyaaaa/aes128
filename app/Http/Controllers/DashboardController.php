@@ -24,10 +24,10 @@ class DashboardController extends Controller
             $query->where('file_type', $validated['file_type']);
         }
         if (! empty($validated['date_from'])) {
-            $query->whereDate('created_at', '>=', $validated['date_from']);
+            $query->createdOnOrAfterLocalDate($validated['date_from']);
         }
         if (! empty($validated['date_to'])) {
-            $query->whereDate('created_at', '<=', $validated['date_to']);
+            $query->createdBeforeOrOnLocalDate($validated['date_to']);
         }
 
         $totalFiles = FileLog::count();
@@ -41,7 +41,7 @@ class DashboardController extends Controller
                 ['label' => 'Total File Terenkripsi', 'value' => (string) $totalFiles, 'tone' => 'text-emerald-700'],
                 ['label' => 'Staff Aktif', 'value' => (string) User::where('role', 'staff')->where('is_active', true)->count(), 'tone' => 'text-sky-700'],
                 ['label' => 'Total Ukuran File', 'value' => $this->formatBytes((int) $totalBytes), 'tone' => 'text-lime-700'],
-                ['label' => 'Upload Hari Ini', 'value' => (string) FileLog::whereDate('created_at', Carbon::today())->count(), 'tone' => 'text-amber-700'],
+                ['label' => 'Upload Hari Ini', 'value' => (string) FileLog::createdDuringLocalDate($this->todayInDisplayTimezone()->toDateString())->count(), 'tone' => 'text-amber-700'],
             ],
             'activity' => $this->weeklyActivity(),
             'logs' => $query->limit(20)->get(),
@@ -66,7 +66,7 @@ class DashboardController extends Controller
             'stats' => [
                 'total' => (clone $query)->count(),
                 'size' => $this->formatBytes($totalBytes),
-                'today' => (clone $query)->whereDate('created_at', Carbon::today())->count(),
+                'today' => (clone $query)->createdDuringLocalDate($this->todayInDisplayTimezone()->toDateString())->count(),
             ],
             'staffLogs' => (clone $query)->limit(20)->get(),
         ]);
@@ -76,11 +76,11 @@ class DashboardController extends Controller
     {
         return collect(range(6, 0))
             ->map(function (int $daysAgo): array {
-                $date = Carbon::today()->subDays($daysAgo);
+                $date = $this->todayInDisplayTimezone()->subDays($daysAgo);
 
                 return [
                     'label' => $date->isoFormat('ddd'),
-                    'count' => FileLog::whereDate('created_at', $date)->count(),
+                    'count' => FileLog::createdDuringLocalDate($date->toDateString())->count(),
                 ];
             })
             ->all();
@@ -96,5 +96,10 @@ class DashboardController extends Controller
         }
 
         return number_format($bytes / 1048576, 1, ',', '.').' MB';
+    }
+
+    private function todayInDisplayTimezone(): Carbon
+    {
+        return Carbon::today(config('app.display_timezone'));
     }
 }

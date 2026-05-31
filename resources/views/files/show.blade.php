@@ -31,7 +31,7 @@
         </div>
         <div>
             <dt class="font-semibold text-zinc-500">Diunggah Pada</dt>
-            <dd class="mt-1 font-medium text-zinc-900">{{ $fileLog->created_at?->format('d M Y, H:i') }}</dd>
+            <dd class="mt-1 font-medium text-zinc-900">{{ $fileLog->created_at?->timezone(config('app.display_timezone'))->format('d M Y, H:i') }}</dd>
         </div>
         <div>
             <dt class="font-semibold text-zinc-500">Alamat IP</dt>

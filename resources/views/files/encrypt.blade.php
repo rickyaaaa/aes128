@@ -4,7 +4,7 @@
 <div class="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
     <form method="POST" action="{{ route('files.encrypt.store') }}" enctype="multipart/form-data" class="panel p-5">
         @csrf
-        <h2 class="text-lg font-bold">Ruang Gembok</h2>
+        <h2 class="text-lg font-bold">Enkripsi File Yokprinting</h2>
         <p class="mt-1 text-sm text-zinc-600">Input file desain dan invoice sebelum dikunci menjadi format .enc.</p>
 
         <div class="mt-6 space-y-5">

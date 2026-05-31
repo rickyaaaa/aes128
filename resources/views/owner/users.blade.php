@@ -26,7 +26,7 @@
                     <tr>
                         <td class="px-4 py-4 align-top">
                             <p class="font-semibold text-zinc-900">{{ $user['name'] }}</p>
-                            <p class="mt-1 text-xs text-zinc-500">{{ $user['email'] }}</p>
+                            <p class="mt-1 text-xs text-zinc-500">{{ $user['username'] }}</p>
                             <p class="mt-1 text-xs capitalize text-zinc-500">{{ $user['role'] }} - {{ $user['last_seen'] }}</p>
                         </td>
                         <td class="px-4 py-4 align-top">
@@ -37,7 +37,7 @@
                                 @csrf
                                 @method('PATCH')
                                 <input class="field-input mt-0" type="text" name="name" value="{{ $user['name'] }}" aria-label="Nama {{ $user['name'] }}">
-                                <input class="field-input mt-0" type="email" name="email" value="{{ $user['email'] }}" aria-label="Email {{ $user['name'] }}">
+                                <input class="field-input mt-0" type="text" name="username" value="{{ $user['username'] }}" aria-label="Username {{ $user['name'] }}">
                                 <input class="field-input mt-0" type="password" name="password" placeholder="Password baru opsional" aria-label="Password baru {{ $user['name'] }}">
                                 <select class="field-input mt-0" name="is_active" aria-label="Status {{ $user['name'] }}">
                                     <option value="1" @selected($user['status'] === 'Aktif')>Aktif</option>
@@ -75,8 +75,8 @@
                 <input class="field-input" type="text" name="name" value="{{ old('name') }}" placeholder="Nama staff" required>
             </label>
             <label class="block">
-                <span class="field-label">Email</span>
-                <input class="field-input" type="email" name="email" value="{{ old('email') }}" placeholder="staff@example.com" required>
+                <span class="field-label">Username</span>
+                <input class="field-input" type="text" name="username" value="{{ old('username') }}" placeholder="username staff" required>
             </label>
             <label class="block">
                 <span class="field-label">Password awal</span>

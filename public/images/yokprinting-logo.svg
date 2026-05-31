@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 96" role="img" aria-labelledby="title">
+  <title id="title">Yokprinting</title>
+  <rect width="420" height="96" rx="12" fill="#ffffff"/>
+  <g fill="none" stroke="#07559b" stroke-linecap="round" stroke-linejoin="round" stroke-width="8">
+    <path d="M22 25l20 22 20-22"/>
+    <path d="M42 47v27"/>
+    <rect x="73" y="30" width="28" height="40" rx="4"/>
+    <path d="M79 30v-8h16v8M81 44h12M81 55h12"/>
+  </g>
+  <text x="113" y="64" fill="#07559b" font-family="Arial, Helvetica, sans-serif" font-size="42" font-weight="700" letter-spacing="-1">KPRINTING.ID</text>
+</svg>

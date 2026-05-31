@@ -3,16 +3,16 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Login | AES-128 File Security</title>
+    <title>Login | Yokprinting</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body>
 <main class="grid min-h-screen bg-zinc-950 text-white lg:grid-cols-[1.05fr_0.95fr]">
     <section class="flex items-center px-6 py-12 sm:px-10 lg:px-16">
         <div class="max-w-2xl">
-            <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-emerald-400 text-sm font-black text-zinc-950">AES</div>
-            <h1 class="mt-8 text-4xl font-bold tracking-normal sm:text-5xl">Ruang Gembok File AES-128</h1>
-            <p class="mt-5 text-lg leading-8 text-zinc-300">Prototype skripsi untuk demonstrasi enkripsi, dekripsi, audit log, dan pemisahan akses Owner serta Staff dalam satu aplikasi Laravel monolitik.</p>
+            <img src="{{ asset('images/yokprinting-logo.svg') }}" alt="Yokprinting" class="h-16 w-auto rounded-lg bg-white px-3 py-2">
+            <h1 class="mt-8 text-4xl font-bold tracking-normal sm:text-5xl">Keamanan File Yokprinting</h1>
+            <p class="mt-5 text-lg leading-8 text-zinc-300">Sistem internal Yokprinting untuk enkripsi, dekripsi, pengelolaan file, dan pemisahan akses Owner serta Staff.</p>
             <div class="mt-8 grid gap-3 sm:grid-cols-3">
                 <div class="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
                     <p class="text-2xl font-bold text-emerald-300">JPG</p>
@@ -34,7 +34,7 @@
         <form method="POST" action="{{ route('login.store') }}" class="panel w-full max-w-md p-6">
             @csrf
             <div>
-                <p class="text-sm font-semibold text-emerald-700">Autentikasi Laravel</p>
+                <p class="text-sm font-semibold text-emerald-700">Yokprinting Internal System</p>
                 <h2 class="mt-2 text-2xl font-bold">Masuk ke sistem</h2>
                 <p class="mt-2 text-sm text-zinc-600">Sistem membaca role dari akun dan mengarahkan ke dashboard yang sesuai.</p>
             </div>
@@ -53,8 +53,8 @@
 
             <div class="mt-6 space-y-4">
                 <label class="block">
-                    <span class="field-label">Email</span>
-                    <input class="field-input" type="email" name="email" value="{{ old('email', 'owner@aes128.test') }}" autocomplete="email" required autofocus>
+                    <span class="field-label">Username</span>
+                    <input class="field-input" type="text" name="username" value="{{ old('username', 'owner') }}" autocomplete="username" required autofocus>
                 </label>
                 <label class="block">
                     <span class="field-label">Password</span>
@@ -68,7 +68,7 @@
 
             <button class="primary-button mt-6 w-full" type="submit">Masuk</button>
             <div class="mt-4 rounded-lg bg-zinc-100 p-3 text-sm text-zinc-600">
-                Akun awal seeder: owner@aes128.test / password. Registrasi publik dinonaktifkan sesuai PRD.
+                Akun awal seeder: owner / password. Registrasi publik dinonaktifkan.
             </div>
         </form>
     </section>

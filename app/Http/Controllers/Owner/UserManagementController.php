@@ -23,7 +23,7 @@ class UserManagementController extends Controller
                 ->map(fn (User $user): array => [
                     'id' => $user->id,
                     'name' => $user->name,
-                    'email' => $user->email,
+                    'username' => $user->username,
                     'role' => $user->role,
                     'status' => $user->is_active ? 'Aktif' : 'Nonaktif',
                     'last_seen' => $user->updated_at?->format('d M Y, H:i') ?? '-',
@@ -36,7 +36,7 @@ class UserManagementController extends Controller
     {
         User::create([
             'name' => $request->string('name')->toString(),
-            'email' => $request->string('email')->toString(),
+            'username' => $request->string('username')->toString(),
             'password' => $request->string('password')->toString(),
             'role' => 'staff',
             'is_active' => $request->boolean('is_active'),
@@ -51,7 +51,7 @@ class UserManagementController extends Controller
 
         $data = [
             'name' => $request->string('name')->toString(),
-            'email' => $request->string('email')->toString(),
+            'username' => $request->string('username')->toString(),
             'is_active' => $request->boolean('is_active'),
         ];
 

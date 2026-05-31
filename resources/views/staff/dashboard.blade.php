@@ -21,7 +21,7 @@
         <h2 class="text-lg font-bold">Aksi Cepat</h2>
         <p class="mt-1 text-sm text-zinc-600">Dekripsi dan update password dilakukan dari daftar file milik sendiri.</p>
         <div class="mt-5 grid gap-3">
-            <a href="{{ route('files.encrypt') }}" class="primary-button justify-between">Buka Ruang Gembok <span>Enkripsi</span></a>
+            <a href="{{ route('files.encrypt') }}" class="primary-button justify-between">Buka Enkripsi File <span>Enkripsi</span></a>
             <a href="{{ route('history') }}" class="secondary-button justify-between">Kelola File Saya <span>Riwayat</span></a>
             <a href="{{ route('unauthorized') }}" class="secondary-button justify-between">Simulasi Akses Owner <span>403</span></a>
         </div>

@@ -1,4 +1,4 @@
-# AES-128 File Security
+# Yokprinting File Security
 
 Laravel 11 monolith based on `prd (3).md`.
 
@@ -23,7 +23,6 @@ Laravel 11 monolith based on `prd (3).md`.
 - `GET /encrypt`
 - `GET /history`
 - `GET /owner/users`
-- `GET /owner/audit-logs`
 
 ## Route Aksi File
 
@@ -35,8 +34,8 @@ Laravel 11 monolith based on `prd (3).md`.
 
 ## Akun Seed
 
-- Owner: `owner@aes128.test` / `password`
-- Staff: `staff@aes128.test` / `password`
+- Owner: `owner` / `password`
+- Staff: `staff` / `password`
 
 ## Local Development
 

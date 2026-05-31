@@ -9,7 +9,6 @@
         </div>
         <div class="flex flex-wrap gap-2">
             <a href="{{ route('files.encrypt') }}" class="primary-button">Enkripsi Baru</a>
-            <a href="{{ route('owner.audit') }}" class="secondary-button {{ $role === 'owner' ? '' : 'hidden' }}">Audit Global</a>
         </div>
     </div>
 

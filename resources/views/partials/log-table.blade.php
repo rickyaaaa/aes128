@@ -31,7 +31,7 @@
                 @endif
                 <td class="px-4 py-4 text-zinc-700">{{ strtoupper($log->file_type) }}</td>
                 <td class="px-4 py-4 text-zinc-700">{{ number_format($log->file_size / 1024, 1, ',', '.') }} KB</td>
-                <td class="px-4 py-4 text-zinc-600">{{ $log->created_at?->format('d M Y, H:i') }}</td>
+                <td class="px-4 py-4 text-zinc-600">{{ $log->created_at?->timezone(config('app.display_timezone'))->format('d M Y, H:i') }}</td>
                 <td class="px-4 py-4">
                     <div class="flex flex-wrap gap-2">
                         <a href="{{ route('files.show', $log) }}" class="secondary-button min-h-9 px-3 py-1">Detail</a>

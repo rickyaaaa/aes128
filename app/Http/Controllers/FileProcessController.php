@@ -135,11 +135,11 @@ class FileProcessController extends Controller
         }
 
         if (! empty($validated['date_from'])) {
-            $query->whereDate('created_at', '>=', $validated['date_from']);
+            $query->createdOnOrAfterLocalDate($validated['date_from']);
         }
 
         if (! empty($validated['date_to'])) {
-            $query->whereDate('created_at', '<=', $validated['date_to']);
+            $query->createdBeforeOrOnLocalDate($validated['date_to']);
         }
 
         $rows = $query->paginate(20)->withQueryString();

@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{{ $pageTitle ?? 'AES-128 File Security' }}</title>
+    <title>{{ $pageTitle ?? 'Yokprinting File Security' }}</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body>
@@ -13,12 +13,11 @@
     $navItems = [
         ['label' => 'Dashboard', 'route' => $isOwner ? 'owner.dashboard' : 'staff.dashboard', 'active' => request()->routeIs($isOwner ? 'owner.dashboard' : 'staff.dashboard')],
         ['label' => 'Enkripsi', 'route' => 'files.encrypt', 'active' => request()->routeIs('files.encrypt')],
-        ['label' => 'Dekripsi', 'route' => 'history', 'active' => request()->routeIs('history')],
         ['label' => $isOwner ? 'Riwayat File' : 'Riwayat Saya', 'route' => 'history', 'active' => request()->routeIs('history')],
+        ['label' => 'Tentang Aplikasi', 'route' => 'about', 'active' => request()->routeIs('about')],
     ];
     $ownerItems = [
         ['label' => 'Manajemen User', 'route' => 'owner.users', 'active' => request()->routeIs('owner.users')],
-        ['label' => 'Audit Global', 'route' => 'owner.audit', 'active' => request()->routeIs('owner.audit')],
     ];
 @endphp
 
@@ -26,10 +25,10 @@
     <aside class="hidden w-72 shrink-0 border-r border-zinc-200 bg-zinc-950 text-white lg:block">
         <div class="flex h-full flex-col p-6">
             <a href="{{ route($isOwner ? 'owner.dashboard' : 'staff.dashboard') }}" class="space-y-3">
-                <div class="flex h-11 w-11 items-center justify-center rounded-lg bg-emerald-500 text-sm font-black text-zinc-950">AES</div>
+                <img src="{{ asset('images/yokprinting-logo.svg') }}" alt="Yokprinting" class="h-12 w-auto rounded-lg bg-white px-2 py-1">
                 <div>
-                    <p class="text-lg font-bold">Ruang Gembok</p>
-                    <p class="text-sm text-zinc-400">Prototype keamanan file AES-128</p>
+                    <p class="text-lg font-bold">Yokprinting</p>
+                    <p class="text-sm text-zinc-400">Keamanan file perusahaan</p>
                 </div>
             </a>
 
@@ -57,7 +56,7 @@
             <div class="mt-auto rounded-lg border border-zinc-800 bg-zinc-900 p-4">
                 <p class="text-xs font-bold uppercase tracking-wider text-zinc-500">Sesi aktif</p>
                 <p class="mt-2 text-sm text-zinc-300">Role: <span class="font-semibold text-white">{{ ucfirst($role) }}</span></p>
-                <p class="mt-1 truncate text-sm text-zinc-400">{{ auth()->user()?->email }}</p>
+                <p class="mt-1 truncate text-sm text-zinc-400">{{ auth()->user()?->username }}</p>
                 <form method="POST" action="{{ route('logout') }}" class="mt-3">
                     @csrf
                     <button class="text-sm font-semibold text-emerald-300 hover:text-emerald-200" type="submit">Keluar</button>

@@ -16,7 +16,7 @@ class StoreStaffRequest extends FormRequest
     {
         return [
             'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'email', 'max:255', 'unique:users,email'],
+            'username' => ['required', 'string', 'max:255', 'unique:users,username'],
             'password' => ['required', 'string', 'min:8', 'max:255'],
             'is_active' => ['required', Rule::in(['0', '1'])],
         ];
