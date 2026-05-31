@@ -11,19 +11,15 @@ return new class extends Migration
         Schema::create('file_logs', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->constrained()->cascadeOnDelete();
-            $table->string('original_filename');
-            $table->string('file_type', 16);
-            $table->string('process_type');
-            $table->unsignedInteger('file_size_kb');
-            $table->string('status')->default('success');
+            $table->string('file_name');
+            $table->string('stored_path');
+            $table->unsignedBigInteger('file_size');
+            $table->string('file_type', 32);
             $table->string('ip_address', 45)->nullable();
-            $table->string('output_filename')->nullable();
-            $table->string('stored_path')->nullable();
-            $table->text('error_message')->nullable();
             $table->timestamps();
 
             $table->index(['user_id', 'created_at']);
-            $table->index(['process_type', 'status']);
+            $table->index(['file_type', 'created_at']);
         });
     }
 

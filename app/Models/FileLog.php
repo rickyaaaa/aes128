@@ -11,22 +11,13 @@ class FileLog extends Model
 {
     use HasFactory;
 
-    public const PROCESS_ENCRYPTION = 'encryption';
-    public const PROCESS_DECRYPTION = 'decryption';
-    public const STATUS_SUCCESS = 'success';
-    public const STATUS_FAILED = 'failed';
-
     protected $fillable = [
         'user_id',
-        'original_filename',
-        'file_type',
-        'process_type',
-        'file_size_kb',
-        'status',
-        'ip_address',
-        'output_filename',
+        'file_name',
         'stored_path',
-        'error_message',
+        'file_size',
+        'file_type',
+        'ip_address',
     ];
 
     public function user(): BelongsTo

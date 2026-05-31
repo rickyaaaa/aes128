@@ -57,18 +57,12 @@ class ExampleTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_staff_can_encrypt_file_and_download_stored_enc(): void
+    public function test_staff_can_encrypt_file_and_record_file_repository_row(): void
     {
         Storage::fake('local');
-        $staff = User::create([
-            'name' => 'Staff',
-            'email' => 'staff@example.test',
-            'password' => 'password',
-            'role' => 'staff',
-            'is_active' => true,
-        ]);
+        $staff = $this->staffUser();
 
-        $this->actingAs($staff)
+        $response = $this->actingAs($staff)
             ->post('/encrypt', [
                 'source_file' => UploadedFile::fake()->image('invoice.png')->size(512),
                 'secret_key' => 'secret123',
@@ -79,107 +73,146 @@ class ExampleTest extends TestCase
         $log = FileLog::firstOrFail();
 
         $this->assertDatabaseHas('file_logs', [
+            'id' => $log->id,
             'user_id' => $staff->id,
-            'original_filename' => 'invoice.png',
+            'file_name' => 'invoice.png',
             'file_type' => 'png',
-            'process_type' => FileLog::PROCESS_ENCRYPTION,
-            'status' => FileLog::STATUS_SUCCESS,
         ]);
-
         Storage::disk('local')->assertExists($log->stored_path);
-
-        $this->actingAs($staff)
-            ->get(route('files.download', $log))
-            ->assertOk();
+        $this->assertStringEndsWith('.enc', $log->stored_path);
+        $response->assertRedirect(route('files.show', $log));
     }
 
-    public function test_staff_can_decrypt_file_with_correct_key(): void
+    public function test_detail_page_shows_metadata_without_downloading_the_file(): void
     {
         Storage::fake('local');
-        $staff = User::create([
-            'name' => 'Staff',
-            'email' => 'staff@example.test',
-            'password' => 'password',
-            'role' => 'staff',
-            'is_active' => true,
-        ]);
-
-        $this->actingAs($staff)->post('/encrypt', [
-            'source_file' => UploadedFile::fake()->createWithContent('invoice.pdf', 'PDF content')->size(8),
-            'secret_key' => 'secret123',
-        ]);
-
-        $encryptedLog = FileLog::where('process_type', FileLog::PROCESS_ENCRYPTION)->firstOrFail();
-        $encryptedUpload = new UploadedFile(
-            Storage::disk('local')->path($encryptedLog->stored_path),
-            $encryptedLog->output_filename,
-            'application/octet-stream',
-            null,
-            true,
-        );
+        $staff = $this->staffUser();
+        $log = $this->encryptFileFor($staff, 'invoice.pdf', 'PDF content', 'secret123');
 
         $this->actingAs($staff)
-            ->post('/decrypt', [
-                'encrypted_file' => $encryptedUpload,
+            ->get(route('files.show', $log))
+            ->assertOk()
+            ->assertSee('Detail File')
+            ->assertSee('invoice.pdf')
+            ->assertSee('Dekripsi & Download', false);
+    }
+
+    public function test_staff_can_decrypt_by_file_id_and_auto_download(): void
+    {
+        Storage::fake('local');
+        $staff = $this->staffUser();
+        $log = $this->encryptFileFor($staff, 'invoice.pdf', 'PDF content', 'secret123');
+
+        $this->actingAs($staff)
+            ->post(route('files.decrypt', $log), [
                 'secret_key' => 'secret123',
             ])
-            ->assertSessionHas('status')
-            ->assertSessionHas('output_filename', 'invoice.pdf');
-
-        $decryptLog = FileLog::where('process_type', FileLog::PROCESS_DECRYPTION)->firstOrFail();
-
-        $this->assertSame(FileLog::STATUS_SUCCESS, $decryptLog->status);
-        Storage::disk('local')->assertExists($decryptLog->stored_path);
+            ->assertOk()
+            ->assertDownload('invoice.pdf');
     }
 
-    public function test_wrong_secret_key_is_rejected_and_logged(): void
+    public function test_wrong_password_returns_invalid_password_error(): void
     {
         Storage::fake('local');
-        $staff = User::create([
-            'name' => 'Staff',
-            'email' => 'staff@example.test',
-            'password' => 'password',
-            'role' => 'staff',
-            'is_active' => true,
-        ]);
-
-        $this->actingAs($staff)->post('/encrypt', [
-            'source_file' => UploadedFile::fake()->createWithContent('invoice.pdf', 'PDF content')->size(8),
-            'secret_key' => 'secret123',
-        ]);
-
-        $encryptedLog = FileLog::where('process_type', FileLog::PROCESS_ENCRYPTION)->firstOrFail();
-        $encryptedUpload = new UploadedFile(
-            Storage::disk('local')->path($encryptedLog->stored_path),
-            $encryptedLog->output_filename,
-            'application/octet-stream',
-            null,
-            true,
-        );
+        $staff = $this->staffUser();
+        $log = $this->encryptFileFor($staff, 'invoice.pdf', 'PDF content', 'secret123');
 
         $this->actingAs($staff)
-            ->post('/decrypt', [
-                'encrypted_file' => $encryptedUpload,
-                'secret_key' => 'wrongkey123',
+            ->post(route('files.decrypt', $log), [
+                'secret_key' => 'wrongpass123',
             ])
-            ->assertSessionHasErrors('encrypted_file');
-
-        $this->assertDatabaseHas('file_logs', [
-            'user_id' => $staff->id,
-            'process_type' => FileLog::PROCESS_DECRYPTION,
-            'status' => FileLog::STATUS_FAILED,
-        ]);
+            ->assertSessionHasErrors('decrypt_secret_key');
     }
 
-    public function test_upload_validation_limits_file_types(): void
+    public function test_staff_can_update_password_with_old_password_validation(): void
     {
-        $staff = User::create([
-            'name' => 'Staff',
-            'email' => 'staff@example.test',
+        Storage::fake('local');
+        $staff = $this->staffUser();
+        $log = $this->encryptFileFor($staff, 'invoice.pdf', 'PDF content', 'secret123');
+
+        $this->actingAs($staff)
+            ->post(route('files.password.update', $log), [
+                'old_secret_key' => 'secret123',
+                'new_secret_key' => 'newsecret123',
+            ])
+            ->assertSessionHas('status');
+
+        $this->actingAs($staff)
+            ->post(route('files.decrypt', $log), [
+                'secret_key' => 'secret123',
+            ])
+            ->assertSessionHasErrors('decrypt_secret_key');
+
+        $this->actingAs($staff)
+            ->post(route('files.decrypt', $log), [
+                'secret_key' => 'newsecret123',
+            ])
+            ->assertOk()
+            ->assertDownload('invoice.pdf');
+    }
+
+    public function test_owner_cannot_update_password_of_other_user_file(): void
+    {
+        Storage::fake('local');
+        $staff = $this->staffUser();
+        $owner = User::create([
+            'name' => 'Owner',
+            'email' => 'owner@example.test',
+            'password' => 'password',
+            'role' => 'owner',
+            'is_active' => true,
+        ]);
+        $log = $this->encryptFileFor($staff, 'invoice.pdf', 'PDF content', 'secret123');
+
+        $this->actingAs($owner)
+            ->post(route('files.password.update', $log), [
+                'old_secret_key' => 'secret123',
+                'new_secret_key' => 'newsecret123',
+            ])
+            ->assertForbidden();
+    }
+
+    public function test_owner_can_decrypt_staff_file_from_repository(): void
+    {
+        Storage::fake('local');
+        $staff = $this->staffUser();
+        $owner = $this->ownerUser();
+        $log = $this->encryptFileFor($staff, 'invoice.pdf', 'PDF content', 'secret123');
+
+        $this->actingAs($owner)
+            ->get(route('files.show', $log))
+            ->assertOk()
+            ->assertSee('invoice.pdf');
+
+        $this->actingAs($owner)
+            ->post(route('files.decrypt', $log), [
+                'secret_key' => 'secret123',
+            ])
+            ->assertOk()
+            ->assertDownload('invoice.pdf');
+    }
+
+    public function test_staff_cannot_open_another_staff_file(): void
+    {
+        Storage::fake('local');
+        $staff = $this->staffUser();
+        $otherStaff = User::create([
+            'name' => 'Other Staff',
+            'email' => 'other.staff@example.test',
             'password' => 'password',
             'role' => 'staff',
             'is_active' => true,
         ]);
+        $log = $this->encryptFileFor($staff, 'invoice.pdf', 'PDF content', 'secret123');
+
+        $this->actingAs($otherStaff)
+            ->get(route('files.show', $log))
+            ->assertForbidden();
+    }
+
+    public function test_upload_validation_limits_file_types_to_jpg_png_pdf(): void
+    {
+        $staff = $this->staffUser();
 
         $this->actingAs($staff)
             ->post('/encrypt', [
@@ -187,13 +220,6 @@ class ExampleTest extends TestCase
                 'secret_key' => 'secret123',
             ])
             ->assertSessionHasErrors('source_file');
-
-        $this->actingAs($staff)
-            ->post('/decrypt', [
-                'encrypted_file' => UploadedFile::fake()->create('invoice.pdf', 2, 'application/pdf'),
-                'secret_key' => 'secret123',
-            ])
-            ->assertSessionHasErrors('encrypted_file');
     }
 
     public function test_owner_can_create_staff_account(): void
@@ -220,5 +246,38 @@ class ExampleTest extends TestCase
             'role' => 'staff',
             'is_active' => true,
         ]);
+    }
+
+    private function staffUser(): User
+    {
+        return User::create([
+            'name' => 'Staff',
+            'email' => 'staff@example.test',
+            'password' => 'password',
+            'role' => 'staff',
+            'is_active' => true,
+        ]);
+    }
+
+    private function ownerUser(): User
+    {
+        return User::create([
+            'name' => 'Owner',
+            'email' => 'owner@example.test',
+            'password' => 'password',
+            'role' => 'owner',
+            'is_active' => true,
+        ]);
+    }
+
+    private function encryptFileFor(User $user, string $filename, string $content, string $secretKey): FileLog
+    {
+        $this->actingAs($user)
+            ->post('/encrypt', [
+                'source_file' => UploadedFile::fake()->createWithContent($filename, $content),
+                'secret_key' => $secretKey,
+            ]);
+
+        return FileLog::latest('id')->firstOrFail();
     }
 }

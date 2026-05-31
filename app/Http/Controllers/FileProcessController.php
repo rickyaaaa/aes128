@@ -3,17 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Exceptions\InvalidSecretKeyException;
-use App\Http\Requests\DecryptFileRequest;
 use App\Http\Requests\EncryptFileRequest;
 use App\Models\FileLog;
 use App\Services\FileCryptoService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\StreamedResponse;
-use Throwable;
 
 class FileProcessController extends Controller
 {
@@ -22,130 +19,160 @@ class FileProcessController extends Controller
         return view('files.encrypt', [
             'role' => $request->user()->role,
             'pageTitle' => 'Enkripsi File',
-            'pageDescription' => 'Unggah file JPG, PNG, atau PDF dan masukkan Kunci Rahasia untuk pengamanan AES-128-CBC.',
+            'pageDescription' => 'Unggah file JPG, PNG, atau PDF lalu masukkan Kata Sandi dinamis untuk enkripsi AES-128-CBC.',
         ]);
     }
 
-    public function storeEncryption(EncryptFileRequest $request, FileCryptoService $service): RedirectResponse
+    public function storeEncryption(EncryptFileRequest $request, FileCryptoService $cryptoService): RedirectResponse
     {
-        $file = $request->file('source_file');
+        $result = $cryptoService->encryptUploadedFile(
+            $request->file('source_file'),
+            $request->string('secret_key')->toString(),
+        );
 
-        try {
-            $result = $service->encrypt($file, $request->string('secret_key')->toString());
-            $log = $this->writeLog($request, $file, FileLog::PROCESS_ENCRYPTION, $result);
+        $fileLog = FileLog::create([
+            'user_id' => $request->user()->id,
+            'file_name' => $result['file_name'],
+            'stored_path' => $result['stored_path'],
+            'file_size' => $result['file_size'],
+            'file_type' => $result['file_type'],
+            'ip_address' => $request->ip(),
+        ]);
 
-            return back()
-                ->with('status', $result['message'])
-                ->with('output_filename', $result['output_filename'])
-                ->with('download_url', route('files.download', $log));
-        } catch (Throwable $exception) {
-            $this->writeLog($request, $file, FileLog::PROCESS_ENCRYPTION, [
-                'status' => FileLog::STATUS_FAILED,
-                'output_filename' => null,
-                'stored_path' => null,
-                'message' => $exception->getMessage(),
-            ]);
-
-            return back()->withErrors(['source_file' => 'Proses enkripsi gagal.']);
-        }
+        return redirect()->route('files.show', $fileLog)
+            ->with('status', 'File berhasil dienkripsi dan disimpan.')
+            ->with('output_filename', $fileLog->file_name.'.enc');
     }
 
-    public function createDecryption(Request $request): View
+    public function show(Request $request, FileLog $fileLog): View
     {
-        return view('files.decrypt', [
+        $this->authorizeOwnerOrFileOwner($request, $fileLog);
+
+        return view('files.show', [
             'role' => $request->user()->role,
-            'pageTitle' => 'Dekripsi File',
-            'pageDescription' => 'Unggah file .enc dan gunakan Kunci Rahasia yang sama untuk membuka file asli.',
+            'fileLog' => $fileLog->load('user'),
+            'pageTitle' => 'Detail File',
+            'pageDescription' => 'Lihat metadata file terenkripsi dan pilih aksi yang diperlukan.',
         ]);
     }
 
-    public function storeDecryption(DecryptFileRequest $request, FileCryptoService $service): RedirectResponse
+    public function decrypt(Request $request, FileLog $fileLog, FileCryptoService $cryptoService): StreamedResponse|RedirectResponse
     {
-        $file = $request->file('encrypted_file');
+        $this->authorizeOwnerOrFileOwner($request, $fileLog);
+
+        $validated = $request->validate([
+            'secret_key' => ['required', 'string', 'min:8', 'max:255'],
+        ]);
 
         try {
-            $result = $service->decrypt($file, $request->string('secret_key')->toString());
-            $log = $this->writeLog($request, $file, FileLog::PROCESS_DECRYPTION, $result, $result['file_type'] ?? 'enc');
-
-            return back()
-                ->with('status', $result['message'])
-                ->with('output_filename', $result['output_filename'])
-                ->with('download_url', route('files.download', $log));
-        } catch (InvalidSecretKeyException $exception) {
-            $this->writeLog($request, $file, FileLog::PROCESS_DECRYPTION, [
-                'status' => FileLog::STATUS_FAILED,
-                'output_filename' => null,
-                'stored_path' => null,
-                'message' => $exception->getMessage(),
-            ], 'enc');
-
-            return back()->withErrors(['encrypted_file' => $exception->getMessage()]);
-        } catch (Throwable $exception) {
-            $this->writeLog($request, $file, FileLog::PROCESS_DECRYPTION, [
-                'status' => FileLog::STATUS_FAILED,
-                'output_filename' => null,
-                'stored_path' => null,
-                'message' => $exception->getMessage(),
-            ], 'enc');
-
-            return back()->withErrors(['encrypted_file' => 'Proses dekripsi gagal.']);
+            $decrypted = $cryptoService->decryptFromLog($fileLog, $validated['secret_key']);
+        } catch (InvalidSecretKeyException) {
+            return back()->withErrors(['decrypt_secret_key' => 'Invalid password']);
         }
+
+        return response()->streamDownload(function () use ($decrypted): void {
+            echo $decrypted['plain_bytes'];
+        }, $decrypted['original_file_name']);
+    }
+
+    public function updatePassword(Request $request, FileLog $fileLog, FileCryptoService $cryptoService): RedirectResponse
+    {
+        $this->authorizeOwnerFileOnly($request, $fileLog);
+
+        $validated = $request->validate([
+            'old_secret_key' => ['required', 'string', 'min:8', 'max:255'],
+            'new_secret_key' => ['required', 'string', 'min:8', 'max:255', 'different:old_secret_key'],
+        ]);
+
+        try {
+            // Trial decryption (full bytes in-memory) to verify old passphrase before re-encrypt.
+            $cryptoService->rotatePassphrase($fileLog, $validated['old_secret_key'], $validated['new_secret_key']);
+        } catch (InvalidSecretKeyException) {
+            return back()->withErrors(['old_secret_key' => 'Invalid password']);
+        }
+
+        return back()->with('status', 'Kata Sandi file berhasil diperbarui.');
     }
 
     public function download(Request $request, FileLog $fileLog): StreamedResponse
     {
-        abort_unless($request->user()->isOwner() || $fileLog->user_id === $request->user()->id, 403);
-        abort_if(! $fileLog->stored_path || ! Storage::disk('local')->exists($fileLog->stored_path), 404);
+        $this->authorizeOwnerOrFileOwner($request, $fileLog);
 
-        return Storage::disk('local')->download($fileLog->stored_path, $fileLog->output_filename);
+        abort_unless(Storage::disk('local')->exists($fileLog->stored_path), 404);
+
+        return Storage::disk('local')->download($fileLog->stored_path, $fileLog->file_name.'.enc');
+    }
+
+    public function destroy(Request $request, FileLog $fileLog): RedirectResponse
+    {
+        abort_unless($request->user()->isOwner(), 403);
+
+        if (Storage::disk('local')->exists($fileLog->stored_path)) {
+            Storage::disk('local')->delete($fileLog->stored_path);
+        }
+
+        $fileLog->delete();
+
+        return back()->with('status', 'Record file dan berkas terenkripsi berhasil dihapus.');
     }
 
     public function history(Request $request): View
     {
+        $validated = $request->validate([
+            'file_type' => ['nullable', 'string', 'max:32'],
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
+        ]);
+
         $query = FileLog::with('user')->latest();
 
-        if ($request->user()->isStaff()) {
-            $query->forUser($request->user());
+        if (! $request->user()->isOwner()) {
+            $query->where('user_id', $request->user()->id);
         }
 
-        $logs = $this->logRows($query->paginate(20)->getCollection());
+        if (! empty($validated['file_type'])) {
+            $query->where('file_type', $validated['file_type']);
+        }
+
+        if (! empty($validated['date_from'])) {
+            $query->whereDate('created_at', '>=', $validated['date_from']);
+        }
+
+        if (! empty($validated['date_to'])) {
+            $query->whereDate('created_at', '<=', $validated['date_to']);
+        }
+
+        $rows = $query->paginate(20)->withQueryString();
 
         return view('history', [
             'role' => $request->user()->role,
-            'visibleLogs' => $logs,
-            'pageTitle' => $request->user()->isOwner() ? 'Riwayat File' : 'Riwayat File Saya',
-            'pageDescription' => $request->user()->isOwner() ? 'Tampilan ringkas semua proses file.' : 'Riwayat enkripsi dan dekripsi milik akun staff.',
+            'visibleLogs' => $rows->items(),
+            'extensions' => FileLog::query()
+                ->when(! $request->user()->isOwner(), fn ($q) => $q->where('user_id', $request->user()->id))
+                ->select('file_type')
+                ->distinct()
+                ->orderBy('file_type')
+                ->pluck('file_type')
+                ->all(),
+            'filters' => [
+                'file_type' => $validated['file_type'] ?? '',
+                'date_from' => $validated['date_from'] ?? '',
+                'date_to' => $validated['date_to'] ?? '',
+            ],
+            'pageTitle' => $request->user()->isOwner() ? 'Riwayat File Sistem' : 'Riwayat File Personal',
+            'pageDescription' => $request->user()->isOwner()
+                ? 'Owner dapat melihat seluruh file terenkripsi dan melakukan filter dinamis.'
+                : 'Staff hanya melihat file terenkripsi miliknya sendiri.',
         ]);
     }
 
-    private function writeLog(Request $request, UploadedFile $file, string $processType, array $result, ?string $fileType = null): FileLog
+    private function authorizeOwnerFileOnly(Request $request, FileLog $fileLog): void
     {
-        return FileLog::create([
-            'user_id' => $request->user()->id,
-            'original_filename' => $file->getClientOriginalName(),
-            'file_type' => $fileType ?? strtolower($file->getClientOriginalExtension()),
-            'process_type' => $processType,
-            'file_size_kb' => max(1, (int) ceil($file->getSize() / 1024)),
-            'status' => $result['status'] ?? FileLog::STATUS_SUCCESS,
-            'ip_address' => $request->ip(),
-            'output_filename' => $result['output_filename'] ?? null,
-            'stored_path' => $result['stored_path'] ?? null,
-            'error_message' => ($result['status'] ?? FileLog::STATUS_SUCCESS) === FileLog::STATUS_FAILED ? ($result['message'] ?? null) : null,
-        ]);
+        abort_unless($fileLog->user_id === $request->user()->id, 403);
     }
 
-    private function logRows($logs): array
+    private function authorizeOwnerOrFileOwner(Request $request, FileLog $fileLog): void
     {
-        return $logs->map(fn (FileLog $log): array => [
-            'user' => $log->user?->name ?? 'User dihapus',
-            'filename' => $log->original_filename,
-            'type' => $log->file_type,
-            'process' => $log->process_type,
-            'size' => number_format($log->file_size_kb, 0, ',', '.').' KB',
-            'status' => $log->status,
-            'ip' => $log->ip_address ?? '-',
-            'created_at' => $log->created_at?->format('d M Y, H:i') ?? '-',
-            'download_url' => $log->stored_path ? route('files.download', $log) : null,
-        ])->all();
+        abort_unless($request->user()->isOwner() || $fileLog->user_id === $request->user()->id, 403);
     }
 }

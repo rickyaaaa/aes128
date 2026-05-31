@@ -13,7 +13,7 @@
     $navItems = [
         ['label' => 'Dashboard', 'route' => $isOwner ? 'owner.dashboard' : 'staff.dashboard', 'active' => request()->routeIs($isOwner ? 'owner.dashboard' : 'staff.dashboard')],
         ['label' => 'Enkripsi', 'route' => 'files.encrypt', 'active' => request()->routeIs('files.encrypt')],
-        ['label' => 'Dekripsi', 'route' => 'files.decrypt', 'active' => request()->routeIs('files.decrypt')],
+        ['label' => 'Dekripsi', 'route' => 'history', 'active' => request()->routeIs('history')],
         ['label' => $isOwner ? 'Riwayat File' : 'Riwayat Saya', 'route' => 'history', 'active' => request()->routeIs('history')],
     ];
     $ownerItems = [

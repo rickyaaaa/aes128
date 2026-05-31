@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Exceptions\InvalidSecretKeyException;
+use App\Models\FileLog;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -10,140 +11,133 @@ use RuntimeException;
 
 class FileCryptoService
 {
-    private const CIPHER = 'AES-128-CBC';
-    private const VERSION = 1;
+    private const CIPHER = 'aes-128-cbc';
+    private const PBKDF2_ITERATIONS = 120000;
+    private const KEY_LENGTH = 16;
 
-    public function encrypt(UploadedFile $file, string $secretKey): array
+    public function encryptUploadedFile(UploadedFile $file, string $passphrase): array
     {
-        $plainText = file_get_contents($file->getRealPath());
-
-        if ($plainText === false) {
-            throw new RuntimeException('File sumber tidak dapat dibaca.');
+        $plainBytes = file_get_contents($file->getRealPath());
+        if ($plainBytes === false) {
+            throw new RuntimeException('Gagal membaca file sumber.');
         }
 
-        $iv = random_bytes(openssl_cipher_iv_length(self::CIPHER));
-        $cipherText = openssl_encrypt(
-            $plainText,
-            self::CIPHER,
-            $this->encryptionKey($secretKey),
-            OPENSSL_RAW_DATA,
-            $iv,
+        $encryptedBytes = $this->encryptBytes($plainBytes, $passphrase, $file->getClientOriginalName(), strtolower($file->getClientOriginalExtension()));
+        $storedPath = 'encrypted/'.date('Y/m').'/'.Str::uuid()->toString().'.enc';
+
+        Storage::disk('local')->put($storedPath, $encryptedBytes);
+
+        return [
+            'file_name' => $file->getClientOriginalName(),
+            'file_type' => strtolower($file->getClientOriginalExtension()),
+            'file_size' => (int) $file->getSize(),
+            'stored_path' => $storedPath,
+        ];
+    }
+
+    public function decryptFromLog(FileLog $fileLog, string $passphrase): array
+    {
+        if (! str_ends_with(strtolower($fileLog->stored_path), '.enc')) {
+            throw new InvalidSecretKeyException('Invalid password');
+        }
+
+        if (! Storage::disk('local')->exists($fileLog->stored_path)) {
+            throw new RuntimeException('File terenkripsi tidak ditemukan di storage.');
+        }
+
+        $encryptedBytes = Storage::disk('local')->get($fileLog->stored_path);
+
+        return $this->decryptBytes($encryptedBytes, $passphrase);
+    }
+
+    public function rotatePassphrase(FileLog $fileLog, string $oldPassphrase, string $newPassphrase): void
+    {
+        $decrypted = $this->decryptFromLog($fileLog, $oldPassphrase);
+
+        $reEncrypted = $this->encryptBytes(
+            $decrypted['plain_bytes'],
+            $newPassphrase,
+            $decrypted['original_file_name'],
+            $decrypted['original_file_type'],
         );
 
-        if ($cipherText === false) {
-            throw new RuntimeException('OpenSSL gagal mengenkripsi file.');
+        Storage::disk('local')->put($fileLog->stored_path, $reEncrypted);
+    }
+
+    private function encryptBytes(string $plainBytes, string $passphrase, string $originalFileName, string $originalFileType): string
+    {
+        $salt = random_bytes(16);
+        $iv = random_bytes(openssl_cipher_iv_length(self::CIPHER));
+        $encryptionKey = hash_pbkdf2('sha256', $passphrase, $salt, self::PBKDF2_ITERATIONS, self::KEY_LENGTH, true);
+        $macKey = hash_pbkdf2('sha256', $passphrase, $salt, self::PBKDF2_ITERATIONS, 32, true);
+
+        $ciphertext = openssl_encrypt($plainBytes, self::CIPHER, $encryptionKey, OPENSSL_RAW_DATA, $iv);
+        if ($ciphertext === false) {
+            throw new RuntimeException('OpenSSL gagal melakukan enkripsi.');
         }
+
+        $mac = hash_hmac('sha256', $iv.$ciphertext, $macKey, true);
 
         $payload = [
-            'version' => self::VERSION,
-            'algorithm' => self::CIPHER,
-            'original_filename' => $file->getClientOriginalName(),
-            'file_type' => strtolower($file->getClientOriginalExtension()),
+            'version' => 1,
+            'cipher' => self::CIPHER,
+            'iter' => self::PBKDF2_ITERATIONS,
+            'salt' => base64_encode($salt),
             'iv' => base64_encode($iv),
-            'ciphertext' => base64_encode($cipherText),
-            'mac' => hash_hmac('sha256', $iv.$cipherText, $this->macKey($secretKey)),
+            'mac' => base64_encode($mac),
+            'file_name' => $originalFileName,
+            'file_type' => $originalFileType,
+            'ciphertext' => base64_encode($ciphertext),
         ];
 
-        $outputFilename = $file->getClientOriginalName().'.enc';
-        $storedPath = 'encrypted/'.Str::uuid().'.enc';
-
-        Storage::disk('local')->put($storedPath, json_encode($payload, JSON_THROW_ON_ERROR));
-
-        return [
-            'status' => 'success',
-            'output_filename' => $outputFilename,
-            'stored_path' => $storedPath,
-            'message' => 'File berhasil dienkripsi dengan AES-128-CBC.',
-        ];
+        return json_encode($payload, JSON_THROW_ON_ERROR);
     }
 
-    public function decrypt(UploadedFile $file, string $secretKey): array
+    private function decryptBytes(string $encryptedBytes, string $passphrase): array
     {
-        $payload = $this->readPayload($file);
-        $iv = base64_decode($payload['iv'], true);
-        $cipherText = base64_decode($payload['ciphertext'], true);
-
-        if ($iv === false || $cipherText === false) {
-            throw new InvalidSecretKeyException('File terenkripsi tidak valid atau rusak.');
-        }
-
-        $expectedMac = hash_hmac('sha256', $iv.$cipherText, $this->macKey($secretKey));
-
-        if (! hash_equals($expectedMac, $payload['mac'])) {
-            throw new InvalidSecretKeyException('Kunci Rahasia salah atau file terenkripsi tidak cocok.');
-        }
-
-        $plainText = openssl_decrypt(
-            $cipherText,
-            self::CIPHER,
-            $this->encryptionKey($secretKey),
-            OPENSSL_RAW_DATA,
-            $iv,
-        );
-
-        if ($plainText === false) {
-            throw new InvalidSecretKeyException('Dekripsi gagal. Periksa Kunci Rahasia.');
-        }
-
-        $outputFilename = $this->sanitizeFilename($payload['original_filename']);
-        $storedPath = 'decrypted/'.Str::uuid().'-'.$outputFilename;
-
-        Storage::disk('local')->put($storedPath, $plainText);
-
-        return [
-            'status' => 'success',
-            'output_filename' => $outputFilename,
-            'stored_path' => $storedPath,
-            'file_type' => $payload['file_type'],
-            'message' => 'File berhasil didekripsi dengan AES-128-CBC.',
-        ];
-    }
-
-    private function readPayload(UploadedFile $file): array
-    {
-        $rawPayload = file_get_contents($file->getRealPath());
-
-        if ($rawPayload === false) {
-            throw new RuntimeException('File .enc tidak dapat dibaca.');
-        }
-
         try {
-            $payload = json_decode($rawPayload, true, 512, JSON_THROW_ON_ERROR);
+            $payload = json_decode($encryptedBytes, true, 512, JSON_THROW_ON_ERROR);
         } catch (\JsonException) {
-            throw new InvalidSecretKeyException('Format file .enc tidak valid.');
+            throw new InvalidSecretKeyException('Invalid password');
         }
 
-        foreach (['version', 'algorithm', 'original_filename', 'file_type', 'iv', 'ciphertext', 'mac'] as $key) {
+        foreach (['cipher', 'iter', 'salt', 'iv', 'mac', 'file_name', 'file_type', 'ciphertext'] as $key) {
             if (! array_key_exists($key, $payload)) {
-                throw new InvalidSecretKeyException('Format file .enc tidak lengkap.');
+                throw new InvalidSecretKeyException('Invalid password');
             }
         }
 
-        if ((int) $payload['version'] !== self::VERSION || $payload['algorithm'] !== self::CIPHER) {
-            throw new InvalidSecretKeyException('Versi atau algoritma file .enc tidak didukung.');
+        if (($payload['cipher'] ?? null) !== self::CIPHER) {
+            throw new InvalidSecretKeyException('Invalid password');
         }
 
-        if (! in_array($payload['file_type'], ['jpg', 'png', 'pdf'], true)) {
-            throw new InvalidSecretKeyException('Tipe file asli dalam .enc tidak didukung.');
+        $salt = base64_decode((string) $payload['salt'], true);
+        $iv = base64_decode((string) $payload['iv'], true);
+        $mac = base64_decode((string) $payload['mac'], true);
+        $ciphertext = base64_decode((string) $payload['ciphertext'], true);
+
+        if ($salt === false || $iv === false || $mac === false || $ciphertext === false) {
+            throw new InvalidSecretKeyException('Invalid password');
         }
 
-        return $payload;
-    }
+        $iterations = (int) $payload['iter'];
+        $encryptionKey = hash_pbkdf2('sha256', $passphrase, $salt, $iterations, self::KEY_LENGTH, true);
+        $macKey = hash_pbkdf2('sha256', $passphrase, $salt, $iterations, 32, true);
+        $expectedMac = hash_hmac('sha256', $iv.$ciphertext, $macKey, true);
 
-    private function encryptionKey(string $secretKey): string
-    {
-        return substr(hash('sha256', 'aes128-encryption|'.$secretKey, true), 0, 16);
-    }
+        if (! hash_equals($expectedMac, $mac)) {
+            throw new InvalidSecretKeyException('Invalid password');
+        }
 
-    private function macKey(string $secretKey): string
-    {
-        return hash('sha256', 'aes128-mac|'.$secretKey, true);
-    }
+        $plainBytes = openssl_decrypt($ciphertext, self::CIPHER, $encryptionKey, OPENSSL_RAW_DATA, $iv);
+        if ($plainBytes === false) {
+            throw new InvalidSecretKeyException('Invalid password');
+        }
 
-    private function sanitizeFilename(string $filename): string
-    {
-        $filename = basename(str_replace('\\', '/', $filename));
-
-        return preg_replace('/[^A-Za-z0-9._-]/', '_', $filename) ?: 'decrypted-file';
+        return [
+            'plain_bytes' => $plainBytes,
+            'original_file_name' => (string) $payload['file_name'],
+            'original_file_type' => (string) $payload['file_type'],
+        ];
     }
 }

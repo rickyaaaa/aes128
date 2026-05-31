@@ -10,41 +10,65 @@ use Illuminate\View\View;
 
 class DashboardController extends Controller
 {
-    public function owner(): View
+    public function owner(Request $request): View
     {
-        $total = FileLog::count();
-        $success = FileLog::where('status', FileLog::STATUS_SUCCESS)->count();
-        $failed = FileLog::where('status', FileLog::STATUS_FAILED)->count();
+        $validated = $request->validate([
+            'file_type' => ['nullable', 'string', 'max:32'],
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
+        ]);
+
+        $query = FileLog::with('user')->latest();
+
+        if (! empty($validated['file_type'])) {
+            $query->where('file_type', $validated['file_type']);
+        }
+        if (! empty($validated['date_from'])) {
+            $query->whereDate('created_at', '>=', $validated['date_from']);
+        }
+        if (! empty($validated['date_to'])) {
+            $query->whereDate('created_at', '<=', $validated['date_to']);
+        }
+
+        $totalFiles = FileLog::count();
+        $totalBytes = FileLog::sum('file_size');
 
         return view('owner.dashboard', [
             'role' => 'owner',
             'pageTitle' => 'Dashboard Owner',
-            'pageDescription' => 'Ringkasan global aktivitas pengamanan file untuk kebutuhan audit dan demonstrasi skripsi.',
+            'pageDescription' => 'Owner melihat seluruh file terenkripsi dan dapat memfilter berdasarkan ekstensi serta tanggal.',
             'stats' => [
-                ['label' => 'Total File Diproses', 'value' => (string) $total, 'tone' => 'text-emerald-700'],
+                ['label' => 'Total File Terenkripsi', 'value' => (string) $totalFiles, 'tone' => 'text-emerald-700'],
                 ['label' => 'Staff Aktif', 'value' => (string) User::where('role', 'staff')->where('is_active', true)->count(), 'tone' => 'text-sky-700'],
-                ['label' => 'Audit Berhasil', 'value' => $total > 0 ? round(($success / $total) * 100).'%' : '0%', 'tone' => 'text-lime-700'],
-                ['label' => 'Percobaan Gagal', 'value' => (string) $failed, 'tone' => 'text-rose-700'],
+                ['label' => 'Total Ukuran File', 'value' => $this->formatBytes((int) $totalBytes), 'tone' => 'text-lime-700'],
+                ['label' => 'Upload Hari Ini', 'value' => (string) FileLog::whereDate('created_at', Carbon::today())->count(), 'tone' => 'text-amber-700'],
             ],
             'activity' => $this->weeklyActivity(),
-            'logs' => $this->logRows(FileLog::with('user')->latest()->limit(5)->get()),
+            'logs' => $query->limit(20)->get(),
+            'extensions' => FileLog::query()->select('file_type')->distinct()->orderBy('file_type')->pluck('file_type')->all(),
+            'filters' => [
+                'file_type' => $validated['file_type'] ?? '',
+                'date_from' => $validated['date_from'] ?? '',
+                'date_to' => $validated['date_to'] ?? '',
+            ],
         ]);
     }
 
     public function staff(Request $request): View
     {
-        $query = FileLog::forUser($request->user());
+        $query = FileLog::with('user')->forUser($request->user())->latest();
+        $totalBytes = (int) (clone $query)->sum('file_size');
 
         return view('staff.dashboard', [
             'role' => 'staff',
             'pageTitle' => 'Dashboard Staff',
-            'pageDescription' => 'Ringkasan personal file yang diproses oleh akun staff.',
+            'pageDescription' => 'Staff hanya dapat mengakses file terenkripsi miliknya sendiri.',
             'stats' => [
                 'total' => (clone $query)->count(),
-                'encryption' => (clone $query)->where('process_type', FileLog::PROCESS_ENCRYPTION)->where('status', FileLog::STATUS_SUCCESS)->count(),
-                'decryption' => (clone $query)->where('process_type', FileLog::PROCESS_DECRYPTION)->where('status', FileLog::STATUS_SUCCESS)->count(),
+                'size' => $this->formatBytes($totalBytes),
+                'today' => (clone $query)->whereDate('created_at', Carbon::today())->count(),
             ],
-            'staffLogs' => $this->logRows(FileLog::with('user')->forUser($request->user())->latest()->limit(5)->get()),
+            'staffLogs' => (clone $query)->limit(20)->get(),
         ]);
     }
 
@@ -62,18 +86,15 @@ class DashboardController extends Controller
             ->all();
     }
 
-    private function logRows($logs): array
+    private function formatBytes(int $bytes): string
     {
-        return $logs->map(fn (FileLog $log): array => [
-            'user' => $log->user?->name ?? 'User dihapus',
-            'filename' => $log->original_filename,
-            'type' => $log->file_type,
-            'process' => $log->process_type,
-            'size' => number_format($log->file_size_kb, 0, ',', '.').' KB',
-            'status' => $log->status,
-            'ip' => $log->ip_address ?? '-',
-            'created_at' => $log->created_at?->format('d M Y, H:i') ?? '-',
-            'download_url' => $log->stored_path ? route('files.download', $log) : null,
-        ])->all();
+        if ($bytes < 1024) {
+            return $bytes.' B';
+        }
+        if ($bytes < 1048576) {
+            return number_format($bytes / 1024, 1, ',', '.').' KB';
+        }
+
+        return number_format($bytes / 1048576, 1, ',', '.').' MB';
     }
 }

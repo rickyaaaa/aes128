@@ -25,10 +25,12 @@ Route::post('/logout', [AuthenticatedSessionController::class, 'destroy'])
 Route::middleware('auth')->group(function () {
     Route::get('/encrypt', [FileProcessController::class, 'createEncryption'])->name('files.encrypt');
     Route::post('/encrypt', [FileProcessController::class, 'storeEncryption'])->name('files.encrypt.store');
-    Route::get('/decrypt', [FileProcessController::class, 'createDecryption'])->name('files.decrypt');
-    Route::post('/decrypt', [FileProcessController::class, 'storeDecryption'])->name('files.decrypt.store');
+    Route::get('/file-logs/{fileLog}', [FileProcessController::class, 'show'])->name('files.show');
+    Route::post('/file-logs/{fileLog}/decrypt', [FileProcessController::class, 'decrypt'])->name('files.decrypt');
+    Route::post('/file-logs/{fileLog}/password', [FileProcessController::class, 'updatePassword'])->name('files.password.update');
     Route::get('/file-logs/{fileLog}/download', [FileProcessController::class, 'download'])->name('files.download');
     Route::get('/history', [FileProcessController::class, 'history'])->name('history');
+    Route::delete('/file-logs/{fileLog}', [FileProcessController::class, 'destroy'])->name('files.destroy');
 
     Route::get('/staff/dashboard', [DashboardController::class, 'staff'])
         ->middleware('role:staff')

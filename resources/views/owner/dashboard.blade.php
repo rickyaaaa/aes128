@@ -32,14 +32,43 @@
     <section class="panel p-5">
         <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
-                <h2 class="text-lg font-bold">Audit Terbaru</h2>
-                <p class="mt-1 text-sm text-zinc-600">Owner melihat seluruh log sistem.</p>
+                <h2 class="text-lg font-bold">Daftar File Terenkripsi</h2>
+                <p class="mt-1 text-sm text-zinc-600">Filter extension dan rentang tanggal berjalan dinamis saat dipilih.</p>
             </div>
             <a href="{{ route('owner.audit') }}" class="secondary-button">Lihat Semua</a>
         </div>
+        <form method="GET" class="mt-4 grid gap-3 md:grid-cols-3" id="owner-filter-form">
+            <select class="field-input mt-0" name="file_type" id="owner-file-type-filter">
+                <option value="">Semua Ekstensi</option>
+                @foreach ($extensions as $extension)
+                    <option value="{{ $extension }}" @selected(($filters['file_type'] ?? '') === $extension)>{{ strtoupper($extension) }}</option>
+                @endforeach
+            </select>
+            <input class="field-input mt-0" type="date" name="date_from" value="{{ $filters['date_from'] ?? '' }}" id="owner-date-from-filter">
+            <input class="field-input mt-0" type="date" name="date_to" value="{{ $filters['date_to'] ?? '' }}" id="owner-date-to-filter">
+        </form>
         <div class="mt-5">
-            @include('partials.log-table', ['logs' => array_slice($logs, 0, 3)])
+            @include('partials.log-table', [
+                'logs' => $logs,
+                'showUser' => true,
+                'canDelete' => true,
+                'canDecrypt' => true,
+                'canUpdatePassword' => false,
+            ])
         </div>
     </section>
 </div>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const filterForm = document.getElementById('owner-filter-form');
+    ['owner-file-type-filter', 'owner-date-from-filter', 'owner-date-to-filter'].forEach((id) => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.addEventListener('change', function () {
+                filterForm.submit();
+            });
+        }
+    });
+});
+</script>
 @endsection
