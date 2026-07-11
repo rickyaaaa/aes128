@@ -40,6 +40,7 @@
     </dl>
 
     <div class="mt-6 flex flex-wrap gap-3">
+        <a href="{{ route('files.download', $fileLog) }}" class="primary-button">Unduh File Terenkripsi (.enc)</a>
         <a href="{{ route($role === 'owner' ? 'owner.dashboard' : 'staff.dashboard') }}" class="secondary-button">Kembali</a>
     </div>
 </section>
