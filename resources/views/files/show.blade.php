@@ -37,6 +37,18 @@
             <dt class="font-semibold text-zinc-500">Alamat IP</dt>
             <dd class="mt-1 font-medium text-zinc-900">{{ $fileLog->ip_address ?? '-' }}</dd>
         </div>
+        @if (session('encrypt_time'))
+            <div>
+                <dt class="font-semibold text-zinc-500">Waktu Enkripsi</dt>
+                <dd class="mt-1 font-medium text-zinc-900">{{ session('encrypt_time') }} detik</dd>
+            </div>
+        @endif
+        @if (session('decrypt_time'))
+            <div>
+                <dt class="font-semibold text-zinc-500">Waktu Dekripsi</dt>
+                <dd class="mt-1 font-medium text-zinc-900">{{ session('decrypt_time') }} detik</dd>
+            </div>
+        @endif
     </dl>
 
     <div class="mt-6 flex flex-wrap gap-3">

@@ -29,6 +29,8 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/encrypt', [FileProcessController::class, 'createEncryption'])->name('files.encrypt');
     Route::post('/encrypt', [FileProcessController::class, 'storeEncryption'])->name('files.encrypt.store');
+    Route::get('/decrypt', [FileProcessController::class, 'createDecryption'])->name('files.decrypt.create');
+    Route::post('/decrypt', [FileProcessController::class, 'storeDecryption'])->name('files.decrypt.store');
     Route::get('/file-logs/{fileLog}', [FileProcessController::class, 'show'])->name('files.show');
     Route::post('/file-logs/{fileLog}/decrypt', [FileProcessController::class, 'decrypt'])->name('files.decrypt');
     Route::post('/file-logs/{fileLog}/password', [FileProcessController::class, 'updatePassword'])->name('files.password.update');

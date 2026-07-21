@@ -14,6 +14,9 @@ class FileCryptoService
     private const CIPHER = 'aes-128-cbc';
     private const PBKDF2_ITERATIONS = 120000;
     private const KEY_LENGTH = 16;
+    private const SALT_LENGTH = 16;
+    private const MAC_LENGTH = 32;
+    private const MAGIC = "AESF";
 
     public function encryptUploadedFile(UploadedFile $file, string $passphrase): array
     {
@@ -22,7 +25,7 @@ class FileCryptoService
             throw new RuntimeException('Gagal membaca file sumber.');
         }
 
-        $encryptedBytes = $this->encryptBytes($plainBytes, $passphrase, $file->getClientOriginalName(), strtolower($file->getClientOriginalExtension()));
+        $encryptedBytes = $this->encryptBytes($plainBytes, $passphrase, $file->getClientOriginalName());
         $storedPath = 'encrypted/'.date('Y/m').'/'.Str::uuid()->toString().'.enc';
 
         Storage::disk('local')->put($storedPath, $encryptedBytes);
@@ -50,6 +53,16 @@ class FileCryptoService
         return $this->decryptBytes($encryptedBytes, $passphrase);
     }
 
+    public function decryptUploadedFile(UploadedFile $file, string $passphrase): array
+    {
+        $encryptedBytes = file_get_contents($file->getRealPath());
+        if ($encryptedBytes === false) {
+            throw new RuntimeException('Gagal membaca file terenkripsi.');
+        }
+
+        return $this->decryptBytes($encryptedBytes, $passphrase);
+    }
+
     public function rotatePassphrase(FileLog $fileLog, string $oldPassphrase, string $newPassphrase): void
     {
         $decrypted = $this->decryptFromLog($fileLog, $oldPassphrase);
@@ -58,86 +71,75 @@ class FileCryptoService
             $decrypted['plain_bytes'],
             $newPassphrase,
             $decrypted['original_file_name'],
-            $decrypted['original_file_type'],
         );
 
         Storage::disk('local')->put($fileLog->stored_path, $reEncrypted);
     }
 
-    private function encryptBytes(string $plainBytes, string $passphrase, string $originalFileName, string $originalFileType): string
+    private function encryptBytes(string $plainBytes, string $passphrase, string $originalFileName): string
     {
-        $salt = random_bytes(16);
+        if (strlen($originalFileName) > 65535) {
+            throw new RuntimeException('Nama file terlalu panjang.');
+        }
+
+        // Nama file asli ikut dienkripsi (bukan disimpan sebagai metadata plaintext)
+        // supaya isi .enc tetap opaque, tapi tetap bisa dipulihkan begitu password benar.
+        $payloadPlain = pack('n', strlen($originalFileName)).$originalFileName.$plainBytes;
+
+        $salt = random_bytes(self::SALT_LENGTH);
         $iv = random_bytes(openssl_cipher_iv_length(self::CIPHER));
         $encryptionKey = hash_pbkdf2('sha256', $passphrase, $salt, self::PBKDF2_ITERATIONS, self::KEY_LENGTH, true);
         $macKey = hash_pbkdf2('sha256', $passphrase, $salt, self::PBKDF2_ITERATIONS, 32, true);
 
-        $ciphertext = openssl_encrypt($plainBytes, self::CIPHER, $encryptionKey, OPENSSL_RAW_DATA, $iv);
+        $ciphertext = openssl_encrypt($payloadPlain, self::CIPHER, $encryptionKey, OPENSSL_RAW_DATA, $iv);
         if ($ciphertext === false) {
             throw new RuntimeException('OpenSSL gagal melakukan enkripsi.');
         }
 
         $mac = hash_hmac('sha256', $iv.$ciphertext, $macKey, true);
 
-        $payload = [
-            'version' => 1,
-            'cipher' => self::CIPHER,
-            'iter' => self::PBKDF2_ITERATIONS,
-            'salt' => base64_encode($salt),
-            'iv' => base64_encode($iv),
-            'mac' => base64_encode($mac),
-            'file_name' => $originalFileName,
-            'file_type' => $originalFileType,
-            'ciphertext' => base64_encode($ciphertext),
-        ];
-
-        return json_encode($payload, JSON_THROW_ON_ERROR);
+        return self::MAGIC.$salt.$iv.$mac.$ciphertext;
     }
 
     private function decryptBytes(string $encryptedBytes, string $passphrase): array
     {
-        try {
-            $payload = json_decode($encryptedBytes, true, 512, JSON_THROW_ON_ERROR);
-        } catch (\JsonException) {
+        $ivLength = openssl_cipher_iv_length(self::CIPHER);
+        $headerLength = strlen(self::MAGIC) + self::SALT_LENGTH + $ivLength + self::MAC_LENGTH;
+
+        if (strlen($encryptedBytes) < $headerLength || ! str_starts_with($encryptedBytes, self::MAGIC)) {
             throw new InvalidSecretKeyException('Invalid password');
         }
 
-        foreach (['cipher', 'iter', 'salt', 'iv', 'mac', 'file_name', 'file_type', 'ciphertext'] as $key) {
-            if (! array_key_exists($key, $payload)) {
-                throw new InvalidSecretKeyException('Invalid password');
-            }
-        }
+        $offset = strlen(self::MAGIC);
+        $salt = substr($encryptedBytes, $offset, self::SALT_LENGTH);
+        $offset += self::SALT_LENGTH;
+        $iv = substr($encryptedBytes, $offset, $ivLength);
+        $offset += $ivLength;
+        $mac = substr($encryptedBytes, $offset, self::MAC_LENGTH);
+        $offset += self::MAC_LENGTH;
+        $ciphertext = substr($encryptedBytes, $offset);
 
-        if (($payload['cipher'] ?? null) !== self::CIPHER) {
-            throw new InvalidSecretKeyException('Invalid password');
-        }
-
-        $salt = base64_decode((string) $payload['salt'], true);
-        $iv = base64_decode((string) $payload['iv'], true);
-        $mac = base64_decode((string) $payload['mac'], true);
-        $ciphertext = base64_decode((string) $payload['ciphertext'], true);
-
-        if ($salt === false || $iv === false || $mac === false || $ciphertext === false) {
-            throw new InvalidSecretKeyException('Invalid password');
-        }
-
-        $iterations = (int) $payload['iter'];
-        $encryptionKey = hash_pbkdf2('sha256', $passphrase, $salt, $iterations, self::KEY_LENGTH, true);
-        $macKey = hash_pbkdf2('sha256', $passphrase, $salt, $iterations, 32, true);
+        $encryptionKey = hash_pbkdf2('sha256', $passphrase, $salt, self::PBKDF2_ITERATIONS, self::KEY_LENGTH, true);
+        $macKey = hash_pbkdf2('sha256', $passphrase, $salt, self::PBKDF2_ITERATIONS, 32, true);
         $expectedMac = hash_hmac('sha256', $iv.$ciphertext, $macKey, true);
 
         if (! hash_equals($expectedMac, $mac)) {
             throw new InvalidSecretKeyException('Invalid password');
         }
 
-        $plainBytes = openssl_decrypt($ciphertext, self::CIPHER, $encryptionKey, OPENSSL_RAW_DATA, $iv);
-        if ($plainBytes === false) {
+        $payloadPlain = openssl_decrypt($ciphertext, self::CIPHER, $encryptionKey, OPENSSL_RAW_DATA, $iv);
+        if ($payloadPlain === false || strlen($payloadPlain) < 2) {
+            throw new InvalidSecretKeyException('Invalid password');
+        }
+
+        $nameLength = unpack('n', substr($payloadPlain, 0, 2))[1];
+        if (strlen($payloadPlain) < 2 + $nameLength) {
             throw new InvalidSecretKeyException('Invalid password');
         }
 
         return [
-            'plain_bytes' => $plainBytes,
-            'original_file_name' => (string) $payload['file_name'],
-            'original_file_type' => (string) $payload['file_type'],
+            'plain_bytes' => substr($payloadPlain, 2 + $nameLength),
+            'original_file_name' => substr($payloadPlain, 2, $nameLength),
         ];
     }
 }

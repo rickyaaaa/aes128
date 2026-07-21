@@ -13,6 +13,7 @@
     $navItems = [
         ['label' => 'Dashboard', 'route' => $isOwner ? 'owner.dashboard' : 'staff.dashboard', 'active' => request()->routeIs($isOwner ? 'owner.dashboard' : 'staff.dashboard')],
         ['label' => 'Enkripsi', 'route' => 'files.encrypt', 'active' => request()->routeIs('files.encrypt')],
+        ['label' => 'Dekripsi', 'route' => 'files.decrypt.create', 'active' => request()->routeIs('files.decrypt.create') || request()->routeIs('files.decrypt.store')],
         ['label' => $isOwner ? 'Riwayat File' : 'Riwayat Saya', 'route' => 'history', 'active' => request()->routeIs('history')],
         ['label' => 'Tentang Aplikasi', 'route' => 'about', 'active' => request()->routeIs('about')],
     ];

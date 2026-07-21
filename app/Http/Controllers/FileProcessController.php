@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Exceptions\InvalidSecretKeyException;
+use App\Http\Requests\DecryptFileRequest;
 use App\Http\Requests\EncryptFileRequest;
 use App\Models\FileLog;
 use App\Services\FileCryptoService;
@@ -25,10 +26,14 @@ class FileProcessController extends Controller
 
     public function storeEncryption(EncryptFileRequest $request, FileCryptoService $cryptoService): RedirectResponse
     {
+        $startTime = microtime(true);
+
         $result = $cryptoService->encryptUploadedFile(
             $request->file('source_file'),
             $request->string('secret_key')->toString(),
         );
+
+        $executionTime = round(microtime(true) - $startTime, 4);
 
         $fileLog = FileLog::create([
             'user_id' => $request->user()->id,
@@ -41,7 +46,38 @@ class FileProcessController extends Controller
 
         return redirect()->route('files.show', $fileLog)
             ->with('status', 'File berhasil dienkripsi dan disimpan.')
-            ->with('output_filename', $fileLog->file_name.'.enc');
+            ->with('output_filename', $fileLog->file_name.'.enc')
+            ->with('encrypt_time', $executionTime);
+    }
+
+    public function createDecryption(Request $request): View
+    {
+        return view('files.decrypt', [
+            'role' => $request->user()->role,
+            'pageTitle' => 'Dekripsi File',
+            'pageDescription' => 'Unggah file .enc apa pun beserta Kata Sandi-nya untuk memulihkan file aslinya.',
+        ]);
+    }
+
+    public function storeDecryption(DecryptFileRequest $request, FileCryptoService $cryptoService): StreamedResponse|RedirectResponse
+    {
+        $startTime = microtime(true);
+
+        try {
+            $decrypted = $cryptoService->decryptUploadedFile(
+                $request->file('source_file'),
+                $request->string('secret_key')->toString(),
+            );
+        } catch (InvalidSecretKeyException) {
+            return back()->withErrors(['secret_key' => 'File .enc tidak valid atau kata sandi salah']);
+        }
+
+        $executionTime = round(microtime(true) - $startTime, 4);
+        session()->flash('decrypt_time', $executionTime);
+
+        return response()->streamDownload(function () use ($decrypted): void {
+            echo $decrypted['plain_bytes'];
+        }, $decrypted['original_file_name']);
     }
 
     public function show(Request $request, FileLog $fileLog): View
@@ -64,11 +100,16 @@ class FileProcessController extends Controller
             'secret_key' => ['required', 'string', 'min:8', 'max:255'],
         ]);
 
+        $startTime = microtime(true);
+
         try {
             $decrypted = $cryptoService->decryptFromLog($fileLog, $validated['secret_key']);
         } catch (InvalidSecretKeyException) {
             return back()->withErrors(['decrypt_secret_key' => 'Invalid password']);
         }
+
+        $executionTime = round(microtime(true) - $startTime, 4);
+        session()->flash('decrypt_time', $executionTime);
 
         return response()->streamDownload(function () use ($decrypted): void {
             echo $decrypted['plain_bytes'];
