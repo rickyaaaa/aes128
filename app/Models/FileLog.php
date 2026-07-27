@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class FileLog extends Model
 {
@@ -24,6 +26,25 @@ class FileLog extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function cryptoProcessLogs(): HasMany
+    {
+        return $this->hasMany(CryptoProcessLog::class);
+    }
+
+    public function latestEncryptionProcess(): HasOne
+    {
+        return $this->hasOne(CryptoProcessLog::class)
+            ->where('operation', CryptoProcessLog::OPERATION_ENCRYPT)
+            ->latest('id');
+    }
+
+    public function latestDecryptionProcess(): HasOne
+    {
+        return $this->hasOne(CryptoProcessLog::class)
+            ->where('operation', CryptoProcessLog::OPERATION_DECRYPT)
+            ->latest('id');
     }
 
     public function scopeForUser(Builder $query, User $user): Builder

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Exceptions\InvalidSecretKeyException;
 use App\Http\Requests\DecryptFileRequest;
 use App\Http\Requests\EncryptFileRequest;
+use App\Models\CryptoProcessLog;
 use App\Models\FileLog;
 use App\Services\FileCryptoService;
 use Illuminate\Http\RedirectResponse;
@@ -44,6 +45,16 @@ class FileProcessController extends Controller
             'ip_address' => $request->ip(),
         ]);
 
+        $this->recordCryptoProcess(
+            $request,
+            CryptoProcessLog::OPERATION_ENCRYPT,
+            $executionTime,
+            $fileLog,
+            $fileLog->file_name,
+            $fileLog->file_size,
+            $fileLog->file_type,
+        );
+
         return redirect()->route('files.show', $fileLog)
             ->with('status', 'File berhasil dienkripsi dan disimpan.')
             ->with('output_filename', $fileLog->file_name.'.enc')
@@ -75,6 +86,16 @@ class FileProcessController extends Controller
         $executionTime = round(microtime(true) - $startTime, 4);
         session()->flash('decrypt_time', $executionTime);
 
+        $this->recordCryptoProcess(
+            $request,
+            CryptoProcessLog::OPERATION_DECRYPT,
+            $executionTime,
+            null,
+            $decrypted['original_file_name'],
+            (int) strlen($decrypted['plain_bytes']),
+            pathinfo($decrypted['original_file_name'], PATHINFO_EXTENSION) ?: null,
+        );
+
         return response()->streamDownload(function () use ($decrypted): void {
             echo $decrypted['plain_bytes'];
         }, $decrypted['original_file_name']);
@@ -87,6 +108,14 @@ class FileProcessController extends Controller
         return view('files.show', [
             'role' => $request->user()->role,
             'fileLog' => $fileLog->load('user'),
+            'latestEncryptTime' => $fileLog->cryptoProcessLogs()
+                ->encryptions()
+                ->latest()
+                ->value('execution_time_seconds'),
+            'latestDecryptTime' => $fileLog->cryptoProcessLogs()
+                ->decryptions()
+                ->latest()
+                ->value('execution_time_seconds'),
             'pageTitle' => 'Detail File',
             'pageDescription' => 'Lihat metadata file terenkripsi dan pilih aksi yang diperlukan.',
         ]);
@@ -110,6 +139,16 @@ class FileProcessController extends Controller
 
         $executionTime = round(microtime(true) - $startTime, 4);
         session()->flash('decrypt_time', $executionTime);
+
+        $this->recordCryptoProcess(
+            $request,
+            CryptoProcessLog::OPERATION_DECRYPT,
+            $executionTime,
+            $fileLog,
+            $decrypted['original_file_name'],
+            (int) strlen($decrypted['plain_bytes']),
+            pathinfo($decrypted['original_file_name'], PATHINFO_EXTENSION) ?: $fileLog->file_type,
+        );
 
         return response()->streamDownload(function () use ($decrypted): void {
             echo $decrypted['plain_bytes'];
@@ -165,7 +204,7 @@ class FileProcessController extends Controller
             'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
         ]);
 
-        $query = FileLog::with('user')->latest();
+        $query = FileLog::with(['user', 'latestEncryptionProcess', 'latestDecryptionProcess'])->latest();
 
         if (! $request->user()->isOwner()) {
             $query->where('user_id', $request->user()->id);
@@ -215,5 +254,26 @@ class FileProcessController extends Controller
     private function authorizeOwnerOrFileOwner(Request $request, FileLog $fileLog): void
     {
         abort_unless($request->user()->isOwner() || $fileLog->user_id === $request->user()->id, 403);
+    }
+
+    private function recordCryptoProcess(
+        Request $request,
+        string $operation,
+        float $executionTime,
+        ?FileLog $fileLog,
+        string $fileName,
+        ?int $fileSize,
+        ?string $fileType,
+    ): void {
+        CryptoProcessLog::create([
+            'user_id' => $request->user()->id,
+            'file_log_id' => $fileLog?->id,
+            'operation' => $operation,
+            'file_name' => $fileName,
+            'file_size' => $fileSize,
+            'file_type' => $fileType ? strtolower($fileType) : null,
+            'execution_time_seconds' => $executionTime,
+            'ip_address' => $request->ip(),
+        ]);
     }
 }

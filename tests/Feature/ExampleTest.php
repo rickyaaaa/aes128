@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\CryptoProcessLog;
 use App\Models\FileLog;
 use App\Models\User;
 use Carbon\Carbon;
@@ -120,6 +121,46 @@ class ExampleTest extends TestCase
         Storage::disk('local')->assertExists($log->stored_path);
         $this->assertStringEndsWith('.enc', $log->stored_path);
         $response->assertRedirect(route('files.show', $log));
+    }
+
+    public function test_crypto_speed_metrics_are_persisted_and_shown_on_dashboard(): void
+    {
+        Storage::fake('local');
+        $staff = $this->staffUser();
+        $log = $this->encryptFileFor($staff, 'invoice.png', 'image bytes', 'secret123');
+
+        $encryptMetric = CryptoProcessLog::encryptions()->firstOrFail();
+
+        $this->assertSame($staff->id, $encryptMetric->user_id);
+        $this->assertSame($log->id, $encryptMetric->file_log_id);
+        $this->assertGreaterThan(0, $encryptMetric->execution_time_seconds);
+
+        $this->actingAs($staff)
+            ->get(route('staff.dashboard'))
+            ->assertOk()
+            ->assertSee('Kecepatan')
+            ->assertSee('Enkrip:')
+            ->assertSee('invoice.png')
+            ->assertSee('Enkripsi');
+
+        $this->actingAs($staff)
+            ->post(route('files.decrypt', $log), [
+                'secret_key' => 'secret123',
+            ])
+            ->assertOk()
+            ->assertDownload('invoice.png');
+
+        $decryptMetric = CryptoProcessLog::decryptions()->firstOrFail();
+
+        $this->assertSame($staff->id, $decryptMetric->user_id);
+        $this->assertSame($log->id, $decryptMetric->file_log_id);
+        $this->assertGreaterThan(0, $decryptMetric->execution_time_seconds);
+
+        $this->actingAs($staff)
+            ->get(route('staff.dashboard'))
+            ->assertOk()
+            ->assertSee('Dekrip:')
+            ->assertSee('detik');
     }
 
     public function test_detail_page_shows_metadata_without_downloading_the_file(): void

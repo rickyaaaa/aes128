@@ -15,6 +15,7 @@
             @endif
             <th class="px-4 py-3">Tipe</th>
             <th class="px-4 py-3">Ukuran</th>
+            <th class="px-4 py-3">Kecepatan</th>
             <th class="px-4 py-3">Waktu Upload</th>
             <th class="px-4 py-3">Aksi</th>
         </tr>
@@ -31,6 +32,22 @@
                 @endif
                 <td class="px-4 py-4 text-zinc-700">{{ strtoupper($log->file_type) }}</td>
                 <td class="px-4 py-4 text-zinc-700">{{ number_format($log->file_size / 1024, 1, ',', '.') }} KB</td>
+                <td class="px-4 py-4 text-zinc-700">
+                    <div class="space-y-1 whitespace-nowrap text-xs">
+                        <p>
+                            <span class="font-semibold text-emerald-700">Enkrip:</span>
+                            <span class="font-medium text-zinc-900">
+                                {{ $log->latestEncryptionProcess ? number_format($log->latestEncryptionProcess->execution_time_seconds, 4, ',', '.').' detik' : 'Belum tercatat' }}
+                            </span>
+                        </p>
+                        <p>
+                            <span class="font-semibold text-sky-700">Dekrip:</span>
+                            <span class="font-medium text-zinc-900">
+                                {{ $log->latestDecryptionProcess ? number_format($log->latestDecryptionProcess->execution_time_seconds, 4, ',', '.').' detik' : 'Belum tercatat' }}
+                            </span>
+                        </p>
+                    </div>
+                </td>
                 <td class="px-4 py-4 text-zinc-600">{{ $log->created_at?->timezone(config('app.display_timezone'))->format('d M Y, H:i') }}</td>
                 <td class="px-4 py-4">
                     <div class="flex flex-wrap gap-2">
@@ -67,7 +84,7 @@
             </tr>
         @empty
             <tr>
-                <td class="px-4 py-8 text-center text-sm text-zinc-500" colspan="{{ $showUser ? 6 : 5 }}">Belum ada file terenkripsi.</td>
+                <td class="px-4 py-8 text-center text-sm text-zinc-500" colspan="{{ $showUser ? 7 : 6 }}">Belum ada file terenkripsi.</td>
             </tr>
         @endforelse
         </tbody>

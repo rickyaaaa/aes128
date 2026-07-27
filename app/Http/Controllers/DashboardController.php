@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\CryptoProcessLog;
 use App\Models\FileLog;
 use App\Models\User;
 use Carbon\Carbon;
@@ -18,7 +19,7 @@ class DashboardController extends Controller
             'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
         ]);
 
-        $query = FileLog::with('user')->latest();
+        $query = FileLog::with(['user', 'latestEncryptionProcess', 'latestDecryptionProcess'])->latest();
 
         if (! empty($validated['file_type'])) {
             $query->where('file_type', $validated['file_type']);
@@ -56,7 +57,9 @@ class DashboardController extends Controller
 
     public function staff(Request $request): View
     {
-        $query = FileLog::with('user')->forUser($request->user())->latest();
+        $query = FileLog::with(['user', 'latestEncryptionProcess', 'latestDecryptionProcess'])
+            ->forUser($request->user())
+            ->latest();
         $totalBytes = (int) (clone $query)->sum('file_size');
 
         return view('staff.dashboard', [
@@ -80,7 +83,7 @@ class DashboardController extends Controller
 
                 return [
                     'label' => $date->isoFormat('ddd'),
-                    'count' => FileLog::createdDuringLocalDate($date->toDateString())->count(),
+                    'count' => CryptoProcessLog::createdDuringLocalDate($date->toDateString())->count(),
                 ];
             })
             ->all();

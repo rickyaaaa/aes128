@@ -1,6 +1,11 @@
 @extends('layouts.app')
 
 @section('content')
+@php
+    $encryptTime = $latestEncryptTime ?? session('encrypt_time');
+    $decryptTime = $latestDecryptTime ?? session('decrypt_time');
+@endphp
+
 <section class="panel p-5">
     <div class="flex flex-wrap items-start justify-between gap-3 border-b border-zinc-200 pb-4">
         <div>
@@ -37,16 +42,16 @@
             <dt class="font-semibold text-zinc-500">Alamat IP</dt>
             <dd class="mt-1 font-medium text-zinc-900">{{ $fileLog->ip_address ?? '-' }}</dd>
         </div>
-        @if (session('encrypt_time'))
+        @if ($encryptTime !== null)
             <div>
                 <dt class="font-semibold text-zinc-500">Waktu Enkripsi</dt>
-                <dd class="mt-1 font-medium text-zinc-900">{{ session('encrypt_time') }} detik</dd>
+                <dd class="mt-1 font-medium text-zinc-900">{{ number_format((float) $encryptTime, 4, ',', '.') }} detik</dd>
             </div>
         @endif
-        @if (session('decrypt_time'))
+        @if ($decryptTime !== null)
             <div>
                 <dt class="font-semibold text-zinc-500">Waktu Dekripsi</dt>
-                <dd class="mt-1 font-medium text-zinc-900">{{ session('decrypt_time') }} detik</dd>
+                <dd class="mt-1 font-medium text-zinc-900">{{ number_format((float) $decryptTime, 4, ',', '.') }} detik</dd>
             </div>
         @endif
     </dl>
