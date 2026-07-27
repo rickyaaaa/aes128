@@ -193,6 +193,54 @@ class ExampleTest extends TestCase
             ->assertDownload('invoice.pdf');
     }
 
+    public function test_staff_can_upload_downloaded_enc_file_on_decrypt_page(): void
+    {
+        Storage::fake('local');
+        $staff = $this->staffUser();
+        $log = $this->encryptFileFor($staff, 'invoice.pdf', 'PDF content', 'secret123');
+        $encryptedBytes = Storage::disk('local')->get($log->stored_path);
+
+        $this->actingAs($staff)
+            ->post(route('files.decrypt.store'), [
+                'source_file' => UploadedFile::fake()->createWithContent('invoice.pdf.enc', $encryptedBytes),
+                'secret_key' => 'secret123',
+            ])
+            ->assertOk()
+            ->assertDownload('invoice.pdf');
+    }
+
+    public function test_staff_can_upload_legacy_pbkdf2_enc_file_on_decrypt_page(): void
+    {
+        $staff = $this->staffUser();
+
+        $this->actingAs($staff)
+            ->post(route('files.decrypt.store'), [
+                'source_file' => UploadedFile::fake()->createWithContent(
+                    'invoice.pdf.enc',
+                    $this->legacyPbkdf2EncryptedPayload('invoice.pdf', 'PDF content', 'secret123'),
+                ),
+                'secret_key' => 'secret123',
+            ])
+            ->assertOk()
+            ->assertDownload('invoice.pdf');
+    }
+
+    public function test_staff_can_upload_legacy_simple_enc_file_on_decrypt_page(): void
+    {
+        $staff = $this->staffUser();
+
+        $this->actingAs($staff)
+            ->post(route('files.decrypt.store'), [
+                'source_file' => UploadedFile::fake()->createWithContent(
+                    'invoice.pdf.enc',
+                    $this->legacySimpleEncryptedPayload('invoice.pdf', 'PDF content', 'secret123'),
+                ),
+                'secret_key' => 'secret123',
+            ])
+            ->assertOk()
+            ->assertDownload('invoice.pdf');
+    }
+
     public function test_dashboard_decrypt_action_opens_decrypt_page_without_modal(): void
     {
         Storage::fake('local');
@@ -412,5 +460,48 @@ class ExampleTest extends TestCase
             ]);
 
         return FileLog::latest('id')->firstOrFail();
+    }
+
+    private function legacyPbkdf2EncryptedPayload(string $filename, string $content, string $secretKey): string
+    {
+        $cipher = 'aes-128-cbc';
+        $iterations = 120000;
+        $salt = random_bytes(16);
+        $iv = random_bytes(openssl_cipher_iv_length($cipher));
+        $encryptionKey = hash_pbkdf2('sha256', $secretKey, $salt, $iterations, 16, true);
+        $macKey = hash_pbkdf2('sha256', $secretKey, $salt, $iterations, 32, true);
+        $ciphertext = openssl_encrypt($content, $cipher, $encryptionKey, OPENSSL_RAW_DATA, $iv);
+        $mac = hash_hmac('sha256', $iv.$ciphertext, $macKey, true);
+
+        return json_encode([
+            'version' => 1,
+            'cipher' => $cipher,
+            'iter' => $iterations,
+            'salt' => base64_encode($salt),
+            'iv' => base64_encode($iv),
+            'mac' => base64_encode($mac),
+            'file_name' => $filename,
+            'file_type' => pathinfo($filename, PATHINFO_EXTENSION),
+            'ciphertext' => base64_encode($ciphertext),
+        ], JSON_THROW_ON_ERROR);
+    }
+
+    private function legacySimpleEncryptedPayload(string $filename, string $content, string $secretKey): string
+    {
+        $cipher = 'AES-128-CBC';
+        $iv = random_bytes(openssl_cipher_iv_length($cipher));
+        $encryptionKey = substr(hash('sha256', 'aes128-encryption|'.$secretKey, true), 0, 16);
+        $macKey = hash('sha256', 'aes128-mac|'.$secretKey, true);
+        $ciphertext = openssl_encrypt($content, $cipher, $encryptionKey, OPENSSL_RAW_DATA, $iv);
+
+        return json_encode([
+            'version' => 1,
+            'algorithm' => $cipher,
+            'original_filename' => $filename,
+            'file_type' => pathinfo($filename, PATHINFO_EXTENSION),
+            'iv' => base64_encode($iv),
+            'ciphertext' => base64_encode($ciphertext),
+            'mac' => hash_hmac('sha256', $iv.$ciphertext, $macKey),
+        ], JSON_THROW_ON_ERROR);
     }
 }

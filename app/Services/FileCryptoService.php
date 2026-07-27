@@ -12,11 +12,18 @@ use RuntimeException;
 class FileCryptoService
 {
     private const CIPHER = 'aes-128-cbc';
+
     private const PBKDF2_ITERATIONS = 120000;
+
     private const KEY_LENGTH = 16;
+
     private const SALT_LENGTH = 16;
+
     private const MAC_LENGTH = 32;
-    private const MAGIC = "AESF";
+
+    private const MAGIC = 'AESF';
+
+    private const LEGACY_SIMPLE_CIPHER = 'AES-128-CBC';
 
     public function encryptUploadedFile(UploadedFile $file, string $passphrase): array
     {
@@ -103,6 +110,15 @@ class FileCryptoService
 
     private function decryptBytes(string $encryptedBytes, string $passphrase): array
     {
+        if (! str_starts_with($encryptedBytes, self::MAGIC)) {
+            return $this->decryptLegacyJsonBytes($encryptedBytes, $passphrase);
+        }
+
+        return $this->decryptCurrentBytes($encryptedBytes, $passphrase);
+    }
+
+    private function decryptCurrentBytes(string $encryptedBytes, string $passphrase): array
+    {
         $ivLength = openssl_cipher_iv_length(self::CIPHER);
         $headerLength = strlen(self::MAGIC) + self::SALT_LENGTH + $ivLength + self::MAC_LENGTH;
 
@@ -141,5 +157,135 @@ class FileCryptoService
             'plain_bytes' => substr($payloadPlain, 2 + $nameLength),
             'original_file_name' => substr($payloadPlain, 2, $nameLength),
         ];
+    }
+
+    private function decryptLegacyJsonBytes(string $encryptedBytes, string $passphrase): array
+    {
+        try {
+            $payload = json_decode($encryptedBytes, true, 512, JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            throw new InvalidSecretKeyException('Invalid password');
+        }
+
+        if (! is_array($payload)) {
+            throw new InvalidSecretKeyException('Invalid password');
+        }
+
+        if (array_key_exists('cipher', $payload)) {
+            return $this->decryptLegacyPbkdf2Json($payload, $passphrase);
+        }
+
+        if (array_key_exists('algorithm', $payload)) {
+            return $this->decryptLegacySimpleJson($payload, $passphrase);
+        }
+
+        throw new InvalidSecretKeyException('Invalid password');
+    }
+
+    private function decryptLegacyPbkdf2Json(array $payload, string $passphrase): array
+    {
+        foreach (['cipher', 'iter', 'salt', 'iv', 'mac', 'file_name', 'file_type', 'ciphertext'] as $key) {
+            if (! array_key_exists($key, $payload)) {
+                throw new InvalidSecretKeyException('Invalid password');
+            }
+        }
+
+        if ((string) $payload['cipher'] !== self::CIPHER) {
+            throw new InvalidSecretKeyException('Invalid password');
+        }
+
+        $salt = base64_decode((string) $payload['salt'], true);
+        $iv = base64_decode((string) $payload['iv'], true);
+        $mac = base64_decode((string) $payload['mac'], true);
+        $ciphertext = base64_decode((string) $payload['ciphertext'], true);
+
+        if ($salt === false || $iv === false || $mac === false || $ciphertext === false) {
+            throw new InvalidSecretKeyException('Invalid password');
+        }
+
+        $iterations = (int) $payload['iter'];
+        if ($iterations <= 0) {
+            throw new InvalidSecretKeyException('Invalid password');
+        }
+
+        $encryptionKey = hash_pbkdf2('sha256', $passphrase, $salt, $iterations, self::KEY_LENGTH, true);
+        $macKey = hash_pbkdf2('sha256', $passphrase, $salt, $iterations, 32, true);
+        $expectedMac = hash_hmac('sha256', $iv.$ciphertext, $macKey, true);
+
+        if (! hash_equals($expectedMac, $mac)) {
+            throw new InvalidSecretKeyException('Invalid password');
+        }
+
+        $plainBytes = openssl_decrypt($ciphertext, self::CIPHER, $encryptionKey, OPENSSL_RAW_DATA, $iv);
+        if ($plainBytes === false) {
+            throw new InvalidSecretKeyException('Invalid password');
+        }
+
+        return [
+            'plain_bytes' => $plainBytes,
+            'original_file_name' => $this->sanitizeFilename((string) $payload['file_name']),
+            'original_file_type' => (string) $payload['file_type'],
+        ];
+    }
+
+    private function decryptLegacySimpleJson(array $payload, string $passphrase): array
+    {
+        foreach (['version', 'algorithm', 'original_filename', 'file_type', 'iv', 'ciphertext', 'mac'] as $key) {
+            if (! array_key_exists($key, $payload)) {
+                throw new InvalidSecretKeyException('Invalid password');
+            }
+        }
+
+        if ((int) $payload['version'] !== 1 || (string) $payload['algorithm'] !== self::LEGACY_SIMPLE_CIPHER) {
+            throw new InvalidSecretKeyException('Invalid password');
+        }
+
+        $iv = base64_decode((string) $payload['iv'], true);
+        $ciphertext = base64_decode((string) $payload['ciphertext'], true);
+
+        if ($iv === false || $ciphertext === false) {
+            throw new InvalidSecretKeyException('Invalid password');
+        }
+
+        $expectedMac = hash_hmac('sha256', $iv.$ciphertext, $this->legacySimpleMacKey($passphrase));
+
+        if (! hash_equals($expectedMac, (string) $payload['mac'])) {
+            throw new InvalidSecretKeyException('Invalid password');
+        }
+
+        $plainBytes = openssl_decrypt(
+            $ciphertext,
+            self::LEGACY_SIMPLE_CIPHER,
+            $this->legacySimpleEncryptionKey($passphrase),
+            OPENSSL_RAW_DATA,
+            $iv,
+        );
+
+        if ($plainBytes === false) {
+            throw new InvalidSecretKeyException('Invalid password');
+        }
+
+        return [
+            'plain_bytes' => $plainBytes,
+            'original_file_name' => $this->sanitizeFilename((string) $payload['original_filename']),
+            'original_file_type' => (string) $payload['file_type'],
+        ];
+    }
+
+    private function legacySimpleEncryptionKey(string $passphrase): string
+    {
+        return substr(hash('sha256', 'aes128-encryption|'.$passphrase, true), 0, self::KEY_LENGTH);
+    }
+
+    private function legacySimpleMacKey(string $passphrase): string
+    {
+        return hash('sha256', 'aes128-mac|'.$passphrase, true);
+    }
+
+    private function sanitizeFilename(string $filename): string
+    {
+        $filename = basename(str_replace('\\', '/', $filename));
+
+        return preg_replace('/[^A-Za-z0-9._-]/', '_', $filename) ?: 'decrypted-file';
     }
 }
