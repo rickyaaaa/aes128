@@ -193,6 +193,26 @@ class ExampleTest extends TestCase
             ->assertDownload('invoice.pdf');
     }
 
+    public function test_dashboard_decrypt_action_opens_decrypt_page_without_modal(): void
+    {
+        Storage::fake('local');
+        $staff = $this->staffUser();
+        $log = $this->encryptFileFor($staff, 'invoice.pdf', 'PDF content', 'secret123');
+
+        $this->actingAs($staff)
+            ->get(route('staff.dashboard'))
+            ->assertOk()
+            ->assertSee(route('files.decrypt.create', ['file_log' => $log->id]), false)
+            ->assertDontSee('decrypt-modal');
+
+        $this->actingAs($staff)
+            ->get(route('files.decrypt.create', ['file_log' => $log->id]))
+            ->assertOk()
+            ->assertSee('invoice.pdf')
+            ->assertSee(route('files.decrypt', $log), false)
+            ->assertDontSee('type="file"', false);
+    }
+
     public function test_wrong_password_returns_invalid_password_error(): void
     {
         Storage::fake('local');

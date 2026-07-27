@@ -53,14 +53,12 @@
                     <div class="flex flex-wrap gap-2">
                         <a href="{{ route('files.show', $log) }}" class="secondary-button min-h-9 px-3 py-1">Detail</a>
                         @if ($canDecrypt)
-                            <button
-                                type="button"
-                                class="secondary-button min-h-9 px-3 py-1 decrypt-trigger"
-                                data-file-name="{{ $log->file_name }}"
-                                data-action="{{ route('files.decrypt', $log) }}"
+                            <a
+                                href="{{ route('files.decrypt.create', ['file_log' => $log->id]) }}"
+                                class="secondary-button min-h-9 px-3 py-1"
                             >
                                 Dekripsi
-                            </button>
+                            </a>
                         @endif
                         @if ($canUpdatePassword && $log->user_id === auth()->id())
                             <button
@@ -91,26 +89,6 @@
     </table>
 </div>
 
-@if ($canDecrypt)
-    <div id="decrypt-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-zinc-950/60 p-4">
-        <div class="w-full max-w-md rounded-lg bg-white p-5 shadow-soft">
-            <h3 class="text-lg font-bold">Dekripsi File</h3>
-            <p id="decrypt-file-label" class="mt-1 text-sm text-zinc-600"></p>
-            <form id="decrypt-form" method="POST" class="mt-4">
-                @csrf
-                <label class="block">
-                    <span class="field-label">Kata Sandi</span>
-                    <input class="field-input" type="password" name="secret_key" minlength="8" required>
-                </label>
-                <div class="mt-4 flex justify-end gap-2">
-                    <button type="button" class="secondary-button" id="decrypt-cancel">Batal</button>
-                    <button type="submit" class="primary-button">Dekripsi & Download</button>
-                </div>
-            </form>
-        </div>
-    </div>
-@endif
-
 @if ($canUpdatePassword)
     <div id="password-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-zinc-950/60 p-4">
         <div class="w-full max-w-md rounded-lg bg-white p-5 shadow-soft">
@@ -135,27 +113,13 @@
     </div>
 @endif
 
-@if ($canDecrypt || $canUpdatePassword)
+@if ($canUpdatePassword)
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    const decryptModal = document.getElementById('decrypt-modal');
-    const decryptForm = document.getElementById('decrypt-form');
-    const decryptLabel = document.getElementById('decrypt-file-label');
-    const decryptCancel = document.getElementById('decrypt-cancel');
     const passwordModal = document.getElementById('password-modal');
     const passwordForm = document.getElementById('password-form');
     const passwordLabel = document.getElementById('password-file-label');
     const passwordCancel = document.getElementById('password-cancel');
-
-    document.querySelectorAll('.decrypt-trigger').forEach((button) => {
-        button.addEventListener('click', function () {
-            if (!decryptModal || !decryptForm || !decryptLabel) return;
-            decryptForm.action = button.dataset.action;
-            decryptLabel.textContent = 'File: ' + button.dataset.fileName;
-            decryptModal.classList.remove('hidden');
-            decryptModal.classList.add('flex');
-        });
-    });
 
     document.querySelectorAll('.password-trigger').forEach((button) => {
         button.addEventListener('click', function () {
@@ -166,13 +130,6 @@ document.addEventListener('DOMContentLoaded', function () {
             passwordModal.classList.add('flex');
         });
     });
-
-    if (decryptCancel && decryptModal) {
-        decryptCancel.addEventListener('click', function () {
-            decryptModal.classList.add('hidden');
-            decryptModal.classList.remove('flex');
-        });
-    }
 
     if (passwordCancel && passwordModal) {
         passwordCancel.addEventListener('click', function () {

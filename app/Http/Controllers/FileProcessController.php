@@ -63,10 +63,20 @@ class FileProcessController extends Controller
 
     public function createDecryption(Request $request): View
     {
+        $fileLog = null;
+
+        if ($request->filled('file_log')) {
+            $fileLog = FileLog::findOrFail($request->integer('file_log'));
+            $this->authorizeOwnerOrFileOwner($request, $fileLog);
+        }
+
         return view('files.decrypt', [
             'role' => $request->user()->role,
+            'fileLog' => $fileLog,
             'pageTitle' => 'Dekripsi File',
-            'pageDescription' => 'Unggah file .enc apa pun beserta Kata Sandi-nya untuk memulihkan file aslinya.',
+            'pageDescription' => $fileLog
+                ? 'Masukkan Kata Sandi file yang dipilih untuk memulihkan file aslinya.'
+                : 'Unggah file .enc apa pun beserta Kata Sandi-nya untuk memulihkan file aslinya.',
         ]);
     }
 
