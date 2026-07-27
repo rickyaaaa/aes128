@@ -209,6 +209,21 @@ class ExampleTest extends TestCase
             ->assertDownload('invoice.pdf');
     }
 
+    public function test_manual_decrypt_falls_back_to_matching_repository_file_when_upload_payload_is_invalid(): void
+    {
+        Storage::fake('local');
+        $staff = $this->staffUser();
+        $this->encryptFileFor($staff, 'invoice.pdf', 'PDF content', 'secret123');
+
+        $this->actingAs($staff)
+            ->post(route('files.decrypt.store'), [
+                'source_file' => UploadedFile::fake()->createWithContent('invoice.pdf.enc', 'not a valid encrypted payload'),
+                'secret_key' => 'secret123',
+            ])
+            ->assertOk()
+            ->assertDownload('invoice.pdf');
+    }
+
     public function test_staff_can_upload_legacy_pbkdf2_enc_file_on_decrypt_page(): void
     {
         $staff = $this->staffUser();

@@ -83,6 +83,7 @@ class FileProcessController extends Controller
     public function storeDecryption(DecryptFileRequest $request, FileCryptoService $cryptoService): StreamedResponse|RedirectResponse
     {
         $startTime = microtime(true);
+        $fileLog = null;
 
         try {
             $decrypted = $cryptoService->decryptUploadedFile(
@@ -90,7 +91,20 @@ class FileProcessController extends Controller
                 $request->string('secret_key')->toString(),
             );
         } catch (InvalidSecretKeyException) {
-            return back()->withErrors(['secret_key' => 'File .enc tidak valid atau kata sandi salah']);
+            $fileLog = $this->findUploadedFileLog($request);
+
+            if (! $fileLog) {
+                return back()->withErrors(['secret_key' => 'File .enc tidak valid atau kata sandi salah']);
+            }
+
+            try {
+                $decrypted = $cryptoService->decryptFromLog(
+                    $fileLog,
+                    $request->string('secret_key')->toString(),
+                );
+            } catch (InvalidSecretKeyException) {
+                return back()->withErrors(['secret_key' => 'File .enc tidak valid atau kata sandi salah']);
+            }
         }
 
         $executionTime = round(microtime(true) - $startTime, 4);
@@ -100,7 +114,7 @@ class FileProcessController extends Controller
             $request,
             CryptoProcessLog::OPERATION_DECRYPT,
             $executionTime,
-            null,
+            $fileLog,
             $decrypted['original_file_name'],
             (int) strlen($decrypted['plain_bytes']),
             pathinfo($decrypted['original_file_name'], PATHINFO_EXTENSION) ?: null,
@@ -264,6 +278,33 @@ class FileProcessController extends Controller
     private function authorizeOwnerOrFileOwner(Request $request, FileLog $fileLog): void
     {
         abort_unless($request->user()->isOwner() || $fileLog->user_id === $request->user()->id, 403);
+    }
+
+    private function findUploadedFileLog(Request $request): ?FileLog
+    {
+        $uploadedName = $request->file('source_file')?->getClientOriginalName();
+        if (! $uploadedName) {
+            return null;
+        }
+
+        $fileName = basename(str_replace('\\', '/', $uploadedName));
+        $originalFileName = str_ends_with(strtolower($fileName), '.enc')
+            ? substr($fileName, 0, -4)
+            : $fileName;
+
+        $query = FileLog::query()
+            ->where(function ($query) use ($fileName, $originalFileName) {
+                $query
+                    ->where('file_name', $originalFileName)
+                    ->orWhere('stored_path', 'like', '%/'.$fileName);
+            })
+            ->latest('id');
+
+        if (! $request->user()->isOwner()) {
+            $query->where('user_id', $request->user()->id);
+        }
+
+        return $query->first();
     }
 
     private function recordCryptoProcess(
